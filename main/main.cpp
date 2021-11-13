@@ -21,8 +21,9 @@
 #include "data-types.h"
 
 
-  /* Temporização de Task */
+  /* Task Delay */
 #define xDelay_central_control_task pdMS_TO_TICKS(100)
+#define xDelay_lighting_control_task pdMS_TO_TICKS(100)
 
 
   /* TAG de Log */
@@ -41,27 +42,26 @@ const char *TAG_task_control = "log-task-control";
 #define LEDB GPIO_NUM_14
 
 
-  /* Configuração de PWM */
+  /* Parametros do PWM */
 #define Pwm_Period (1000) //(1Khz)
 const uint32_t pwm_chanel[3] = {LEDR, LEDG, LEDB};
 uint32_t pwm_duties[3] = {0, 0, 0};
 float pwm_phase[3] = {0, 0, 0};
 
 
-  /* Configuração de Interrupção de Timer */
+  /* Configuração Hardware Timer */
 #define Time_Interrupt 90 //(ms)
 
 
-/* Tamanho da Queue */
-#define Queue_size_interrupt_timer 6
-#define QueueSet_size_recv ( Queue_size_interrupt_timer )
+/* Parametros Queue e Set*/
+#define Queue_Lenght_Interrupt_Timer 6
+#define Queue_Size_Interrupt_Timer sizeof(data_interrupt_timer_t)
+#define QueueSet_Size_Recv (Queue_Lenght_Interrupt_Timer + 0)
 QueueHandle_t queue_interrupt_timer;
 QueueSetHandle_t queueSet_control_recv;
 
 
 /*#define xDelay_start pdMS_TO_TICKS(100)
-
-#define xDelay_effect_led_task pdMS_TO_TICKS(200)
 
 #define xDelay_storage_lighting_states pdMS_TO_TICKS(15000)
 #define xDelay_storage_led_states pdMS_TO_TICKS(15000)
@@ -127,7 +127,7 @@ int port = 6000;*/
 
   /* Esco de funções */
 void nvs_start();
-void peripherals_config(void *params);
+void peripherals_config();
 static void sweep_switches(void *params);
 
 //void storage_lighting_states();
@@ -154,13 +154,13 @@ void app_main(){
 
     // Cria Queue
   ESP_LOGI(TAG_main, "Criando Queue");
-  queue_interrupt_timer = xQueueCreate( Queue_size_interrupt_timer, sizeof(data_interrupt_timer_t) );
-  vQueueAddToRegistry( queue_interrupt_timer, "queue-interrupt-timer" );
+  queue_interrupt_timer = xQueueCreate(Queue_Lenght_Interrupt_Timer, Queue_Size_Interrupt_Timer);
+  vQueueAddToRegistry(queue_interrupt_timer, "queue-interrupt-timer");
 
     // Cria Set
   ESP_LOGI(TAG_main, "Criando Set");
-  queueSet_control_recv = xQueueCreateSet( QueueSet_size_recv );
-  xQueueAddToSet( queue_interrupt_timer, queueSet_control_recv );
+  queueSet_control_recv = xQueueCreateSet(QueueSet_Size_Recv);
+  xQueueAddToSet(queue_interrupt_timer, queueSet_control_recv);
 
     // Inicia NVS
   ESP_LOGI(TAG_main, "Iniciando NVS");
@@ -181,7 +181,7 @@ void app_main(){
     // Inicia tarefas (task)
   ESP_LOGI(TAG_main, "Iniciando Tasks");
   xTaskCreate(central_control_task, "central-control-task", 5000, NULL, 2, NULL);
-  //xTaskCreate(effect_led_task, "effect_led_task", 1000, NULL, 1, &control_effect_led_task);
+  xTaskCreate(lighting_control_task, "lighting-control-task", 2000, NULL, 1, NULL);
 
     // Queue Wifi
   /*send_data_queue = xQueueCreate(6, sizeof(params_send_recv_t));
@@ -214,7 +214,7 @@ void nvs_start(){
 }
 
   // Configuração de entrada, saída, interrupção e PWM
-void peripherals_config(void *params){
+void peripherals_config(){
 
     // Configuração do GPIO
   gpio_config_t io_conf;
@@ -265,10 +265,12 @@ static void sweep_switches(void *params){
     time_bt1 += Time_Interrupt;
   
   } else if(bt1){
-    bt1 = false;
     queue_data.id = btn_id::btn1;
     queue_data.time = time_bt1;
     xQueueSendToBackFromISR(queue_interrupt_timer, &queue_data, 0);
+
+    bt1 = false;
+    time_bt1 = 0;
   }
 
     // Leitura do botão 2
@@ -277,10 +279,12 @@ static void sweep_switches(void *params){
     time_bt2 += Time_Interrupt;
   
   } else if(bt2){
-    bt2 = false;
     queue_data.id = btn_id::btn2;
     queue_data.time = time_bt2;
     xQueueSendToBackFromISR(queue_interrupt_timer, &queue_data, 0);
+
+    bt2 = false;
+    time_bt2 = 0;
   }
 
     // Leitura do botão 3
@@ -289,10 +293,12 @@ static void sweep_switches(void *params){
     time_bt3 += Time_Interrupt;
   
   } else if(bt3){
-    bt3 = false;
     queue_data.id = btn_id::btn3;
     queue_data.time = time_bt3;
     xQueueSendToBackFromISR(queue_interrupt_timer, &queue_data, 0);
+
+    bt3 = false;
+    time_bt3 = 0;
   }
 }
 
@@ -362,14 +368,14 @@ void central_control_task(void *params){
   data_interrupt_timer_t btn_data;
 
   TickType_t reference_time_delay;
-  while(1){
+  while(true){
 
       // Efetua a leitura da queue
     set_recv = xQueueSelectFromSet( queueSet_control_recv, 0);
-    if( set_recv == (QueueSetMemberHandle_t) queue_interrupt_timer ){
+    if(set_recv == (QueueSetMemberHandle_t)queue_interrupt_timer){
       xQueueReceive(queue_interrupt_timer, &btn_data, 0);
 
-      printf("Interrupção ID %d \n", btn_data.id);
+      printf("Interrupção ID %d - Time: %d \n", btn_data.id, btn_data.time);
     }
 
     vTaskDelayUntil(&reference_time_delay, xDelay_central_control_task);
@@ -469,13 +475,13 @@ void central_control_task(void *params){
   }*/  
 }
 
-/*void effect_led_task(void *params){
-  params_led_t params_mode_effect_led;
+void lighting_control_task(void *params){
+  /*params_led_t params_mode_effect_led;
   uint16_t R = 0, G = 0, B = 0;
-  float time = 0;
+  float time = 0;*/
 
   while(true){
-    while(uxQueueMessagesWaiting(effect_led_queue) > 0){
+    /*while(uxQueueMessagesWaiting(effect_led_queue) > 0){
       xQueueReceive(effect_led_queue, &params_mode_effect_led, 0);
     }
 
@@ -499,11 +505,11 @@ void central_control_task(void *params){
     pwm_set_duty(0, R);
     pwm_set_duty(1, G);
     pwm_set_duty(2, B);
-    pwm_start();
+    pwm_start();*/
 
-    vTaskDelay(xDelay_effect_led_task);
+    vTaskDelay(xDelay_lighting_control_task);
   }
-}*/
+}
 
 
 /* -- -- Funções -- -- */
