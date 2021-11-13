@@ -56,7 +56,7 @@ float pwm_phase[3] = {0, 0, 0};
 /* Parametros Queue e Set*/
 #define Queue_Lenght_Interrupt_Timer 6
 #define Queue_Size_Interrupt_Timer sizeof(data_interrupt_timer_t)
-#define QueueSet_Size_Recv (Queue_Lenght_Interrupt_Timer + 0)
+#define QueueSet_Lenght_Recv (Queue_Lenght_Interrupt_Timer + 0)
 QueueHandle_t queue_interrupt_timer;
 QueueSetHandle_t queueSet_control_recv;
 
@@ -159,7 +159,7 @@ void app_main(){
 
     // Cria Set
   ESP_LOGI(TAG_main, "Criando Set");
-  queueSet_control_recv = xQueueCreateSet(QueueSet_Size_Recv);
+  queueSet_control_recv = xQueueCreateSet(QueueSet_Lenght_Recv);
   xQueueAddToSet(queue_interrupt_timer, queueSet_control_recv);
 
     // Inicia NVS
