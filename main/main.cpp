@@ -22,43 +22,48 @@
 
 
   /* Task Delay */
-#define xDelay_central_control_task pdMS_TO_TICKS(100)
-#define xDelay_lighting_control_task pdMS_TO_TICKS(100)
+#define xDelay_Central_Control_Task pdMS_TO_TICKS(100)
+#define xDelay_Lighting_Control_Task pdMS_TO_TICKS(100)
 
 
   /* TAG de Log */
-const char *TAG_main = "log-main";
-const char *TAG_task_control = "log-task-control";
+const char *TAG_MAIN = "log-main";
+const char *TAG_TASK_CONTROL = "log-task-control";
+const char *TAG_LD_CONTROL = "log-ld-control";
 
 
   /* Mapeamento IO */
-#define INT1 GPIO_NUM_5
-#define INT2 GPIO_NUM_13
-#define INT3 GPIO_NUM_16
-#define LUZ1 GPIO_NUM_15
-#define LUZ2 GPIO_NUM_0
-#define LEDR GPIO_NUM_4
-#define LEDG GPIO_NUM_12
-#define LEDB GPIO_NUM_14
+#define BT1 GPIO_NUM_5
+#define BT2 GPIO_NUM_13
+#define BT3 GPIO_NUM_16
+#define LD1 GPIO_NUM_15
+#define LD2 GPIO_NUM_0
+#define LDR GPIO_NUM_4
+#define LDG GPIO_NUM_12
+#define LDB GPIO_NUM_14
 
 
   /* Parametros do PWM */
-#define Pwm_Period (1000) //(1Khz)
-const uint32_t pwm_chanel[3] = {LEDR, LEDG, LEDB};
+#define PWM_PERIOD (1000) //(1Khz)
+uint32_t pwm_chanel[3] = {LDR, LDG, LDB};
 uint32_t pwm_duties[3] = {0, 0, 0};
 float pwm_phase[3] = {0, 0, 0};
 
 
   /* Configuração Hardware Timer */
-#define Time_Interrupt 90 //(ms)
+#define TIME_INTERRUPT 90 //(ms)
 
 
 /* Parametros Queue e Set*/
-#define Queue_Lenght_Interrupt_Timer 6
-#define Queue_Size_Interrupt_Timer sizeof(data_interrupt_timer_t)
-#define QueueSet_Lenght_Recv (Queue_Lenght_Interrupt_Timer + 0)
+#define QUEUE_LENGHT_INTERRUPT_TIMER 6
+#define QUEUE_SIZE_INTERRUPT_TIMER sizeof(action_interrupt_timer_t)
+#define QUEUESET_LENGHT_RECV (QUEUE_LENGHT_INTERRUPT_TIMER + 0)
 QueueHandle_t queue_interrupt_timer;
 QueueSetHandle_t queueSet_control_recv;
+
+
+  /* Variáveis */
+lighting_states_t lighting_states = {false, false, false};
 
 
 /*#define xDelay_start pdMS_TO_TICKS(100)
@@ -125,7 +130,7 @@ uint32_t netmask[4] = {255, 255, 255, 0};
 int port = 6000;*/
 
 
-  /* Esco de funções */
+  /* Escopo de funções */
 void nvs_start();
 void peripherals_config();
 static void sweep_switches(void *params);
@@ -134,12 +139,13 @@ static void sweep_switches(void *params);
 //void storage_effect_led_states();
 
 void central_control_task(void *params);
+void lighting_control_task(void *params);
 
-/*void effect_led_task(void *params);
-void action_button_select(state_button_action_t *action_button, lighting_states_t *lighting_states);
-void update_lighting(lighting_states_t *lighting_states);
+actions_t select_button_action(action_interrupt_timer_t *btn_action);
+void update_lighting(actions_t action);
 
-void load_lighting_states(lighting_states_t *lighting_states);
+
+/*void load_lighting_states(lighting_states_t *lighting_states);
 void load_effect_led_states(params_led_t *params_mode_led);
 bool compare_storage_effect_led_states(params_led_t *new_effect_led, params_led_t *old_effect_led);
 */
@@ -150,24 +156,24 @@ extern "C" {
 
 void app_main(){
 
-  ESP_LOGI(TAG_main, "Inicializando...");
+  ESP_LOGI(TAG_MAIN, "Inicializando...");
 
     // Cria Queue
-  ESP_LOGI(TAG_main, "Criando Queue");
-  queue_interrupt_timer = xQueueCreate(Queue_Lenght_Interrupt_Timer, Queue_Size_Interrupt_Timer);
+  ESP_LOGI(TAG_MAIN, "Criando Queue");
+  queue_interrupt_timer = xQueueCreate(QUEUE_LENGHT_INTERRUPT_TIMER, QUEUE_SIZE_INTERRUPT_TIMER);
   vQueueAddToRegistry(queue_interrupt_timer, "queue-interrupt-timer");
 
     // Cria Set
-  ESP_LOGI(TAG_main, "Criando Set");
-  queueSet_control_recv = xQueueCreateSet(QueueSet_Lenght_Recv);
+  ESP_LOGI(TAG_MAIN, "Criando Set");
+  queueSet_control_recv = xQueueCreateSet(QUEUESET_LENGHT_RECV);
   xQueueAddToSet(queue_interrupt_timer, queueSet_control_recv);
 
     // Inicia NVS
-  ESP_LOGI(TAG_main, "Iniciando NVS");
+  ESP_LOGI(TAG_MAIN, "Iniciando NVS");
   nvs_start();
 
     // Configura periféricos
-  ESP_LOGI(TAG_main, "Configurando IO - PWM - hw_timer");
+  ESP_LOGI(TAG_MAIN, "Configurando IO - PWM - Hardware Timer");
   peripherals_config();
 
   /*storage_lighting_states_queue = xQueueCreate(1, sizeof(lighting_states_t));
@@ -179,7 +185,7 @@ void app_main(){
   storage_params_led_timer = xTimerCreate("storage_params_led_timer", xDelay_storage_led_states, pdFALSE, NULL, storage_effect_led_states);*/
 
     // Inicia tarefas (task)
-  ESP_LOGI(TAG_main, "Iniciando Tasks");
+  ESP_LOGI(TAG_MAIN, "Iniciando Tasks");
   xTaskCreate(central_control_task, "central-control-task", 5000, NULL, 2, NULL);
   xTaskCreate(lighting_control_task, "lighting-control-task", 2000, NULL, 1, NULL);
 
@@ -196,8 +202,8 @@ void app_main(){
 
   vTaskDelay(xDelay_start);*/
 
-  ESP_LOGI(TAG_main, "Inicialização Finalizada");
-  ESP_LOGI(TAG_main, "Sistema em execução");
+  ESP_LOGI(TAG_MAIN, "Inicialização Finalizada");
+  ESP_LOGI(TAG_MAIN, "Sistema em execução");
 }
 
 
@@ -221,7 +227,7 @@ void peripherals_config(){
   uint32_t pin_mask;
 
     // Saidas IO
-  pin_mask = ((1ULL << LUZ1) | (1ULL << LUZ2));
+  pin_mask = ((1ULL << LD1) | (1ULL << LD2));
   io_conf.pin_bit_mask = pin_mask;
   io_conf.mode = GPIO_MODE_OUTPUT;
   io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
@@ -230,7 +236,7 @@ void peripherals_config(){
   gpio_config(&io_conf);
 
     // Entradas IO
-  pin_mask = ((1ULL << INT1) | (1ULL << INT2) | (1ULL << INT3));
+  pin_mask = ((1ULL << BT1) | (1ULL << BT2) | (1ULL << BT3));
   io_conf.pin_bit_mask = pin_mask;
   io_conf.mode = GPIO_MODE_INPUT;
   io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
@@ -239,13 +245,13 @@ void peripherals_config(){
   gpio_config(&io_conf);
 
     // Configura PWM
-  pwm_init(Pwm_Period, pwm_duties, 3, pwm_chanel);
+  pwm_init(PWM_PERIOD, pwm_duties, 3, pwm_chanel);
   pwm_set_phases(pwm_phase);
   pwm_stop(0);
 
     // Configuração Interrupção de Timer
   hw_timer_init(sweep_switches, NULL);
-  hw_timer_alarm_us((Time_Interrupt * 1000), true);
+  hw_timer_alarm_us((TIME_INTERRUPT * 1000), true);
 }
 
 
@@ -257,15 +263,15 @@ void peripherals_config(){
 static void sweep_switches(void *params){
   static bool bt1 = false, bt2 = false, bt3 = false;
   static uint16_t time_bt1 = 0, time_bt2 = 0, time_bt3 = 0;
-  data_interrupt_timer_t queue_data;
+  action_interrupt_timer_t queue_data;
 
     // Leitura do botão 1
-  if(gpio_get_level(INT1)){
+  if(gpio_get_level(BT1)){
     bt1 = true;
-    time_bt1 += Time_Interrupt;
+    time_bt1 += TIME_INTERRUPT;
   
   } else if(bt1){
-    queue_data.id = btn_id::btn1;
+    queue_data.id = btn_id_t::BT_1;
     queue_data.time = time_bt1;
     xQueueSendToBackFromISR(queue_interrupt_timer, &queue_data, 0);
 
@@ -274,12 +280,12 @@ static void sweep_switches(void *params){
   }
 
     // Leitura do botão 2
-  if(gpio_get_level(INT2)){
+  if(gpio_get_level(BT2)){
     bt2 = true;
-    time_bt2 += Time_Interrupt;
+    time_bt2 += TIME_INTERRUPT;
   
   } else if(bt2){
-    queue_data.id = btn_id::btn2;
+    queue_data.id = btn_id_t::BT_2;
     queue_data.time = time_bt2;
     xQueueSendToBackFromISR(queue_interrupt_timer, &queue_data, 0);
 
@@ -288,12 +294,12 @@ static void sweep_switches(void *params){
   }
 
     // Leitura do botão 3
-  if(gpio_get_level(INT3)){
+  if(gpio_get_level(BT3)){
     bt3 = true;
-    time_bt3 += Time_Interrupt;
+    time_bt3 += TIME_INTERRUPT;
   
   } else if(bt3){
-    queue_data.id = btn_id::btn3;
+    queue_data.id = btn_id_t::BT_3;
     queue_data.time = time_bt3;
     xQueueSendToBackFromISR(queue_interrupt_timer, &queue_data, 0);
 
@@ -365,20 +371,26 @@ static void sweep_switches(void *params){
 void central_control_task(void *params){
   QueueSetMemberHandle_t set_recv;
 
-  data_interrupt_timer_t btn_data;
+  action_interrupt_timer_t btn_action;
+  actions_t action;
 
   TickType_t reference_time_delay;
   while(true){
 
       // Efetua a leitura da queue
-    set_recv = xQueueSelectFromSet( queueSet_control_recv, 0);
-    if(set_recv == (QueueSetMemberHandle_t)queue_interrupt_timer){
-      xQueueReceive(queue_interrupt_timer, &btn_data, 0);
+    while((set_recv = xQueueSelectFromSet(queueSet_control_recv, 0)) != NULL){
 
-      printf("Interrupção ID %d - Time: %d \n", btn_data.id, btn_data.time);
+      if(set_recv == (QueueSetMemberHandle_t)queue_interrupt_timer){
+        xQueueReceive(queue_interrupt_timer, &btn_action, 0);
+
+        action = select_button_action(&btn_action);
+        update_lighting(action);
+        //update_wifi(action);
+      }
+
     }
 
-    vTaskDelayUntil(&reference_time_delay, xDelay_central_control_task);
+    vTaskDelayUntil(&reference_time_delay, xDelay_Central_Control_Task);
   }
 
 
@@ -507,7 +519,7 @@ void lighting_control_task(void *params){
     pwm_set_duty(2, B);
     pwm_start();*/
 
-    vTaskDelay(xDelay_lighting_control_task);
+    vTaskDelay(xDelay_Lighting_Control_Task);
   }
 }
 
@@ -557,9 +569,31 @@ void lighting_control_task(void *params){
 }*/
 
 
-  // Executa ações dos botões
-/*void action_button_select(state_button_action_t *action_button, lighting_states_t *lighting_states){
-  static bool select_mode_led = false, reset = false;
+  // Interpreta a ação dos botões
+actions_t select_button_action(action_interrupt_timer_t *btn_action){
+  //static bool adjustment = false;
+
+  if(btn_action->id == btn_id_t::BT_1){
+    ESP_LOGI(TAG_LD_CONTROL, "Botão 1 precionado");
+    //printf("Interrupção ID %d - Time: %d \n", btn_action->id, btn_action->time);
+
+    return actions_t::UPDATE_LD_1;
+
+  }else if(btn_action->id == btn_id_t::BT_2){
+    ESP_LOGI(TAG_LD_CONTROL, "Botão 2 precionado");
+    //printf("Interrupção ID %d - Time: %d \n", btn_action->id, btn_action->time);
+
+    return actions_t::UPDATE_LD_2;
+
+  }else if(btn_action->id == btn_id_t::BT_3){
+    ESP_LOGI(TAG_LD_CONTROL, "Botão 3 precionado");
+    //printf("Interrupção ID %d - Time: %d \n", btn_action->id, btn_action->time);
+  }
+
+  return actions_t::NOTHING;
+  
+
+ /* static bool select_mode_led = false, reset = false;
 
   bool aux = (action_button->cnt_bt1 >= 10000) && (action_button->cnt_bt2 >= 10000) && (action_button->cnt_bt3 >= 10000);
   if(aux || reset){
@@ -612,10 +646,25 @@ void lighting_control_task(void *params){
         ESP_LOGI(TAG_CONTROLE, "BT 3");
       }
     }
-  }
-}*/
+  }*/
+}
 
-/*void update_lighting(lighting_states_t *lighting_states){
-  gpio_set_level(LUZ1, lighting_states->l1);
-  gpio_set_level(LUZ2, !lighting_states->l2);
-}*/
+  /* Executa as ações a serem tomadas */
+void update_lighting(actions_t action){
+  switch(action){
+    case actions_t::UPDATE_LD_1:
+      lighting_states.l1 = !lighting_states.l1;
+      ESP_LOGI(TAG_LD_CONTROL, "Atualizando LD1: %d", lighting_states.l1);
+      gpio_set_level(LD1, lighting_states.l1);
+    break;
+
+    case actions_t::UPDATE_LD_2:
+      lighting_states.l2 = !lighting_states.l2;
+      ESP_LOGI(TAG_LD_CONTROL, "Atualizando LD2: %d", lighting_states.l2);
+      gpio_set_level(LD2, !lighting_states.l2);
+    break;
+
+    default:
+    break;
+  }
+}
