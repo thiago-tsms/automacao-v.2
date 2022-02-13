@@ -2,4 +2,6 @@
 
 03/11/2021
 
-Sistema da altomação daseado em ESP8266 com esp-idf
+Sistema da altomação daseado em ESP8266 SDK RTOS com esp-idf
+
+Verção 2

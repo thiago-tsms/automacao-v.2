@@ -19,17 +19,21 @@
 //#include "esp_system.h"
 
 #include "data-types.h"
+#include "json-parse.h"
+#include "wifi-conection.h"
 
 
   /* Task Delay */
 #define xDelay_Central_Control_Task pdMS_TO_TICKS(100)
 #define xDelay_Lighting_Control_Task pdMS_TO_TICKS(100)
+#define xDelay_Wifi_Control_Task pdMS_TO_TICKS(120)
 
 
   /* TAG de Log */
 const char *TAG_MAIN = "log-main";
 const char *TAG_TASK_CONTROL = "log-task-control";
 const char *TAG_LD_CONTROL = "log-ld-control";
+const char *TAG_WIFI_CONTROL = "log-wifi-control";
 
 
   /* Mapeamento IO */
@@ -54,16 +58,22 @@ float pwm_phase[3] = {0, 0, 0};
 #define TIME_INTERRUPT 90 //(ms)
 
 
-/* Parametros Queue e Set*/
+  /* Parametros Queue e Set*/
 #define QUEUE_LENGHT_INTERRUPT_TIMER 6
+#define QUEUE_LENGHT_WIFI_SEND 6
+#define QUEUE_LENGHT_WIFI_RECV 8
 #define QUEUE_SIZE_INTERRUPT_TIMER sizeof(action_interrupt_timer_t)
-#define QUEUESET_LENGHT_RECV (QUEUE_LENGHT_INTERRUPT_TIMER + 0)
+#define QUEUE_SIZE_WIFI_SEND sizeof(data_json_t)
+#define QUEUE_SIZE_WIFI_RECV sizeof(data_json_t)
+#define QUEUESET_LENGHT_RECV (QUEUE_LENGHT_INTERRUPT_TIMER + QUEUE_LENGHT_WIFI_RECV + 0)
 QueueHandle_t queue_interrupt_timer;
+QueueHandle_t queue_wifi_send;
+QueueHandle_t queue_wifi_recv;
 QueueSetHandle_t queueSet_control_recv;
 
 
-  /* Variáveis */
-lighting_states_t lighting_states = {false, false, false};
+  /* Variáveis Gerais */
+lighting_states_t lighting_states = {false, false, false, 1};
 
 
 /*#define xDelay_start pdMS_TO_TICKS(100)
@@ -89,26 +99,6 @@ const char *TAG_NVS = "log-nvs";*/
 TimerHandle_t storage_lighting_states_timer;
 QueueHandle_t storage_lighting_states_queue;*/
 
-  /* Controle RGB*/
-/*typedef struct {
-  bool effect;
-  uint8_t R;
-  uint8_t amp_r;
-  uint16_t per_r;
-  uint16_t des_r;
-  uint8_t G;
-  uint8_t amp_g;
-  uint16_t per_g;
-  uint16_t des_g;
-  uint8_t B;
-  uint8_t amp_b;
-  uint16_t per_b;
-  uint16_t des_b;
-} params_led_t;
-TaskHandle_t control_effect_led_task;
-QueueHandle_t effect_led_queue;
-TimerHandle_t storage_params_led_timer;
-QueueHandle_t storage_params_led_queue;*/
 
   /* WiFi */
 /*typedef struct {
@@ -143,6 +133,7 @@ void lighting_control_task(void *params);
 
 actions_t select_button_action(action_interrupt_timer_t *btn_action);
 void update_lighting(actions_t action);
+void update_wifi(actions_t action);
 
 
 /*void load_lighting_states(lighting_states_t *lighting_states);
@@ -162,15 +153,24 @@ void app_main(){
   ESP_LOGI(TAG_MAIN, "Criando Queue");
   queue_interrupt_timer = xQueueCreate(QUEUE_LENGHT_INTERRUPT_TIMER, QUEUE_SIZE_INTERRUPT_TIMER);
   vQueueAddToRegistry(queue_interrupt_timer, "queue-interrupt-timer");
+  queue_wifi_recv = xQueueCreate(QUEUE_LENGHT_WIFI_RECV, QUEUE_SIZE_WIFI_RECV);
+  vQueueAddToRegistry(queue_wifi_recv, "queue-wifi-recv");
+
+  queue_wifi_send = xQueueCreate(QUEUE_LENGHT_WIFI_SEND, QUEUE_SIZE_WIFI_SEND);
+  vQueueAddToRegistry(queue_wifi_send, "queue-wifi-send");
+
 
     // Cria Set
   ESP_LOGI(TAG_MAIN, "Criando Set");
   queueSet_control_recv = xQueueCreateSet(QUEUESET_LENGHT_RECV);
   xQueueAddToSet(queue_interrupt_timer, queueSet_control_recv);
+  xQueueAddToSet(queue_wifi_recv, queueSet_control_recv);
+
 
     // Inicia NVS
   ESP_LOGI(TAG_MAIN, "Iniciando NVS");
   nvs_start();
+
 
     // Configura periféricos
   ESP_LOGI(TAG_MAIN, "Configurando IO - PWM - Hardware Timer");
@@ -380,12 +380,13 @@ void central_control_task(void *params){
       // Efetua a leitura da queue
     while((set_recv = xQueueSelectFromSet(queueSet_control_recv, 0)) != NULL){
 
+        // Dados da interrupção
       if(set_recv == (QueueSetMemberHandle_t)queue_interrupt_timer){
         xQueueReceive(queue_interrupt_timer, &btn_action, 0);
 
         action = select_button_action(&btn_action);
         update_lighting(action);
-        //update_wifi(action);
+        update_wifi(action);
       }
 
     }
@@ -487,7 +488,10 @@ void central_control_task(void *params){
   }*/  
 }
 
+  /* Controla os periféricos */
 void lighting_control_task(void *params){
+  uint16_t R = 0, G = 0, B = 0;
+
   /*params_led_t params_mode_effect_led;
   uint16_t R = 0, G = 0, B = 0;
   float time = 0;*/
@@ -523,10 +527,27 @@ void lighting_control_task(void *params){
   }
 }
 
+  /* Atualiza o envio e recepção de dados para o wifi */
+void wifi_control_task(void *params){
+  char *json_string = NULL;
+
+  while(1){
+
+      // Envia dados para o Wifi
+    while(uxQueueMessagesWaiting(queue_wifi_send) > 0){
+      json_string = json_serialize(&json_data);
+
+      ESP_LOGI(TAG_WIFI_CONTROL, "JSON %s", json_string);
+      json_string_free(json_string);
+    }
+
+    vTaskDelay(xDelay_Wifi_Control_Task);
+  }
+}
 
 /* -- -- Funções -- -- */
 
-  // Carrega os estados salvos na memória
+  // Carrega dados salvos na memória
 /*void load_lighting_states(lighting_states_t *lighting_states){
   nvs_handle storage_lighting_states_nvs;
   uint8_t load_data;
@@ -571,100 +592,124 @@ void lighting_control_task(void *params){
 
   // Interpreta a ação dos botões
 actions_t select_button_action(action_interrupt_timer_t *btn_action){
-  //static bool adjustment = false;
+  static bool flag = false;
 
+    // BT 1
   if(btn_action->id == btn_id_t::BT_1){
     ESP_LOGI(TAG_LD_CONTROL, "Botão 1 precionado");
-    //printf("Interrupção ID %d - Time: %d \n", btn_action->id, btn_action->time);
 
-    return actions_t::UPDATE_LD_1;
+    if(!flag) return actions_t::UPDATE_LD_1;
+    else return actions_t::UPDATE_MODO_UP_LD_3;
 
+    // BT 2
   }else if(btn_action->id == btn_id_t::BT_2){
     ESP_LOGI(TAG_LD_CONTROL, "Botão 2 precionado");
-    //printf("Interrupção ID %d - Time: %d \n", btn_action->id, btn_action->time);
 
-    return actions_t::UPDATE_LD_2;
+    if(!flag) return actions_t::UPDATE_LD_2;
+    else return actions_t::UPDATE_MODO_DOWN_LD_3;
 
+    // BT 3
   }else if(btn_action->id == btn_id_t::BT_3){
     ESP_LOGI(TAG_LD_CONTROL, "Botão 3 precionado");
-    //printf("Interrupção ID %d - Time: %d \n", btn_action->id, btn_action->time);
+
+    if(btn_action->time > 20000){
+      esp_restart();
+
+    } if(btn_action->time > 3000){
+      ESP_LOGI(TAG_LD_CONTROL, "Controle LED");
+
+      flag = !flag;
+
+    }else if(!flag) return actions_t::UPDATE_STATUS_LD_3;
+    else flag = !flag;
   }
 
   return actions_t::NOTHING;
-  
-
- /* static bool select_mode_led = false, reset = false;
-
-  bool aux = (action_button->cnt_bt1 >= 10000) && (action_button->cnt_bt2 >= 10000) && (action_button->cnt_bt3 >= 10000);
-  if(aux || reset){
-    reset = true;
-
-    if(!action_button->press_bt1 && !action_button->press_bt2 && !action_button->press_bt3){
-      reset = false;
-      esp_restart();
-    }
-
-  } else {
-
-      // Ação do botão 1
-    if(action_button->act_bt1){
-      if(select_mode_led){
-        lighting_states->mode++;
-        if(lighting_states->mode > 4) lighting_states->mode = 1;
-        if(lighting_states->mode < 1) lighting_states->mode = 4;
-
-        ESP_LOGI(TAG_CONTROLE, "UP %d", lighting_states->mode);
-
-      } else {
-        lighting_states->l1 = !lighting_states->l1;
-
-        ESP_LOGI(TAG_CONTROLE, "LUZ 1 %d", lighting_states->mode);
-      }
-    }
-
-      // Ação do botão 2
-    if(action_button->act_bt2){
-      if(select_mode_led){
-        lighting_states->mode--;
-        if(lighting_states->mode > 4) lighting_states->mode = 1;
-        if(lighting_states->mode < 1) lighting_states->mode = 4;
-
-        ESP_LOGI(TAG_CONTROLE, "DOWN %d \n", lighting_states->mode);
-      
-      } else {
-        lighting_states->l2 = !lighting_states->l2;
-        ESP_LOGI(TAG_CONTROLE, "BT 2");
-      }
-    }
-
-      // Ação do botão 3
-    if(action_button->act_bt3){
-      if(select_mode_led) select_mode_led = false;
-      else if((action_button->cnt_bt3 > 2000) && lighting_states->led) select_mode_led = true;
-      else {
-        lighting_states->led = !lighting_states->led;
-        ESP_LOGI(TAG_CONTROLE, "BT 3");
-      }
-    }
-  }*/
 }
 
   /* Executa as ações a serem tomadas */
 void update_lighting(actions_t action){
-  switch(action){
-    case actions_t::UPDATE_LD_1:
-      lighting_states.l1 = !lighting_states.l1;
-      ESP_LOGI(TAG_LD_CONTROL, "Atualizando LD1: %d", lighting_states.l1);
-      gpio_set_level(LD1, lighting_states.l1);
-    break;
 
-    case actions_t::UPDATE_LD_2:
-      lighting_states.l2 = !lighting_states.l2;
-      ESP_LOGI(TAG_LD_CONTROL, "Atualizando LD2: %d", lighting_states.l2);
-      gpio_set_level(LD2, !lighting_states.l2);
-    break;
+    // LD 1 - ON/OFF
+  if(action == actions_t::UPDATE_LD_1) {
+    lighting_states.l1 = !lighting_states.l1;
+    gpio_set_level(LD1, lighting_states.l1);
 
-    default:
-    break;
+    ESP_LOGI(TAG_LD_CONTROL, "Atualizando LD1: %d", lighting_states.l1);
+  
+
+    // LD 2 - ON/OFF
+  } else if(action == actions_t::UPDATE_LD_2) {
+    lighting_states.l2 = !lighting_states.l2;
+    gpio_set_level(LD2, !lighting_states.l2);
+
+    ESP_LOGI(TAG_LD_CONTROL, "Atualizando LD2: %d", lighting_states.l2);
+
+
+    // LD 3 (LED) - ON/OFF
+  } else if(action == actions_t::UPDATE_STATUS_LD_3){
+    lighting_states.led = !lighting_states.led;
+
+    ESP_LOGI(TAG_LD_CONTROL, "Atualizando LED: %d", lighting_states.led);
+
+
+    // LD 3 (LED) - MODE UP
+  } else if(action == actions_t::UPDATE_MODO_UP_LD_3) {
+    lighting_states.mode++;
+    if(lighting_states.mode > 3){
+      if(lighting_states.mode > 100) lighting_states.mode = 3;
+      else lighting_states.mode = 0;
+    }
+
+    ESP_LOGI(TAG_LD_CONTROL, "Atualizando Modo: %d", lighting_states.mode);
+
+
+    // LD 3 (LED) - MODE DOWN
+  } else if(action == actions_t::UPDATE_MODO_DOWN_LD_3) {
+    lighting_states.mode--;
+    if(lighting_states.mode > 3){
+      if(lighting_states.mode > 100) lighting_states.mode = 3;
+      else lighting_states.mode = 0;
+    }
+
+    ESP_LOGI(TAG_LD_CONTROL, "Atualizando Modo: %d", lighting_states.mode);
+
+    // Nenhuma ação
+  } else {
+    ESP_LOGI(TAG_LD_CONTROL, "Nenhuma ação válida");
+  }
+}
+
+  /* Atualiza os dados do wifi */
+void update_wifi(actions_t action){
+  data_json_t json_data;
+
+    // LD 1 - ON/OFF
+  if(action == actions_t::UPDATE_LD_1) {
+    json_data.id = json_id_t::L1;
+    json_data.status = lighting_states.l1;
+
+    xQueueSendToBack(queue_wifi_send, &json_data, 0);
+
+
+    // LD 2 - ON/OFF
+  } else if(action == actions_t::UPDATE_LD_2){
+    json_data.id = json_id_t::L2;
+    json_data.status = lighting_states.l2;
+
+    xQueueSendToBack(queue_wifi_send, &json_data, 0);
+
+
+    // LD 3 (LED) - MODE
+  } else if(action == actions_t::UPDATE_STATUS_LD_3 || action == actions_t::UPDATE_MODO_UP_LD_3 || action == actions_t::UPDATE_MODO_DOWN_LD_3){
+    json_data.id = json_id_t::L3;
+    json_data.status = lighting_states.l3;
+    json_data.mode = lighting_states.mode;
+
+    xQueueSendToBack(queue_wifi_send, &json_data, 0);
+
+
+  } else {
+    ESP_LOGI(TAG_LD_CONTROL, "Nenhuma ação válida");
   }
 }

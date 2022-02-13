@@ -1,4 +1,7 @@
-#include <stdio.h>
+#ifndef WIFI_CONECTION
+#define WIFI_CONECTION
+
+/*#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -12,24 +15,24 @@
 
 #include "lwip/sockets.h"
 
-#define xTime_close_conect pdMS_TO_TICKS(15000)
+#define xTime_close_conect pdMS_TO_TICKS(15000)*/
 
-const char *TAG_SERVER_WIFI = "log-server-wifi";
-const char *TAG_WIFI_STATUS = "log-status-wifi";
+/*const char *TAG_SERVER_WIFI = "log-server-wifi";
+const char *TAG_WIFI_STATUS = "log-status-wifi";*/
 
 
 /* VARIAVEIS */
-char *tcp_server_wifi_ssid, *tcp_server_wifi_password;
+/*char *tcp_server_wifi_ssid, *tcp_server_wifi_password;
 int tcp_server_port;
 tcpip_adapter_ip_info_t tcp_server_adapter_ip;
 TaskHandle_t control_tcp_server_wifi_task;
 TaskHandle_t control_tcp_server_wifi_send_msg;
 TaskHandle_t control_tcp_server_wifi_recv_msg;
-TimerHandle_t time_recv_msg;
+TimerHandle_t time_recv_msg;*/
 
 
 /* ESCOPO */
-void tcp_server_wifi_login();
+/*void tcp_server_wifi_login();
 void tcp_server_wifi_sta();
 void tcp_server_wifi_port();
 void tcp_server_wifi_nvs();
@@ -44,33 +47,33 @@ void cnv_send(params_send_recv_t *params_send_recv, char *dt_string_send);
 int cnv_recv(params_send_recv_t *dt_params_send_recv, char *dt_string_send, int len);
 void cnv_sdrv_to_lgpl(params_send_recv_t *params_send_recv, lighting_states_t *lighting_states, params_led_t *params_led);
 void cnv_lgpl_to_sdrv(params_send_recv_t *params_send_recv, lighting_states_t *lighting_states, params_led_t *params_led);
-
+*/
 
 /* FUNÇÕES */
-void tcp_server_wifi_login(char *ssid, char *password){
+/*void tcp_server_wifi_login(char *ssid, char *password){
   tcp_server_wifi_ssid = ssid;
   tcp_server_wifi_password = password;
-}
+}*/
 
-void tcp_server_wifi_sta(uint32_t *ip, uint32_t *gw, uint32_t *netmask){
+/*void tcp_server_wifi_sta(uint32_t *ip, uint32_t *gw, uint32_t *netmask){
   IP4_ADDR(&tcp_server_adapter_ip.ip, ip[0], ip[1], ip[2], ip[3]);
   IP4_ADDR(&tcp_server_adapter_ip.gw, gw[0], gw[1], gw[2], gw[3]);
   IP4_ADDR(&tcp_server_adapter_ip.netmask, netmask[0], netmask[1], netmask[2], netmask[3]);
-}
+}*/
 
-void tcp_server_wifi_port(int port){
+/*void tcp_server_wifi_port(int port){
   tcp_server_port = port;
-}
+}*/
 
-void tcp_server_wifi_nvs(){
+/*void tcp_server_wifi_nvs(){
   esp_err_t err = nvs_flash_init();
   if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
     ESP_ERROR_CHECK( nvs_flash_erase() );
     ESP_ERROR_CHECK( nvs_flash_init() );
   }
-}
+}*/
 
-void tcp_server_start(){
+/*void tcp_server_start(){
   tcpip_adapter_init();
 
   ESP_ERROR_CHECK( tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA) );
@@ -93,9 +96,9 @@ void tcp_server_start(){
   ESP_ERROR_CHECK( tcpip_adapter_set_hostname(TCPIP_ADAPTER_IF_STA, "Wifi Esp8266") );
 
   ESP_ERROR_CHECK( esp_wifi_connect() );
-}
+}*/
 
-static void tcp_server_on_wifi(void* arg, esp_event_base_t base, int32_t id, void* data) {
+/*static void tcp_server_on_wifi(void* arg, esp_event_base_t base, int32_t id, void* data) {
   switch(id){
     case WIFI_EVENT_WIFI_READY:
       ESP_LOGI(TAG_WIFI_STATUS, "Wifi Pronto");
@@ -125,9 +128,9 @@ static void tcp_server_on_wifi(void* arg, esp_event_base_t base, int32_t id, voi
       esp_wifi_connect();
     break;
   }
-}
+}*/
 
-static void tcp_server_on_ip(void *arg, esp_event_base_t base, int32_t id, void *data) {
+/*static void tcp_server_on_ip(void *arg, esp_event_base_t base, int32_t id, void *data) {
   ip_event_got_ip_t *d;
 
   switch(id){
@@ -140,9 +143,9 @@ static void tcp_server_on_ip(void *arg, esp_event_base_t base, int32_t id, void 
       ESP_LOGI(TAG_SERVER_WIFI, "- Perdeu IP");
     break;
   }
-}
+}*/
 
-void tcp_server_wifi_task(void *params){
+/*void tcp_server_wifi_task(void *params){
   struct sockaddr_in destAddr;
   struct sockaddr_in sourceAddr;
   int listen_sock, sock, err;
@@ -214,13 +217,13 @@ void tcp_server_wifi_task(void *params){
     shutdown(sock, 0);
     ESP_LOGE(TAG_SERVER_WIFI, "Shutting down socket and restarting...");
   }
-}
+}*/
 
-void tcp_server_wifi_recv_msg_time(){
+/*void tcp_server_wifi_recv_msg_time(){
   vTaskResume(control_tcp_server_wifi_task);
-}
+}*/
 
-void tcp_server_wifi_recv_msg(void *params){
+/*void tcp_server_wifi_recv_msg(void *params){
   int *sock = (int*)params, len;
   char rx_buffer[512];
   params_send_recv_t params_send_recv;
@@ -249,9 +252,9 @@ void tcp_server_wifi_recv_msg(void *params){
   }
 
   vTaskResume(control_tcp_server_wifi_task);
-}
+}*/
 
-void tcp_server_wifi_send_msg(void *params){
+/*void tcp_server_wifi_send_msg(void *params){
   int *sock = (int*)params;
   bool send_data = false, new_conection = true;
   char dt_string[128];
@@ -283,9 +286,9 @@ void tcp_server_wifi_send_msg(void *params){
   }
 
   vTaskDelete(NULL);
-}
+}*/
 
-void cnv_send(params_send_recv_t *dt_params_send_recv, char *dt_string_send){
+/*void cnv_send(params_send_recv_t *dt_params_send_recv, char *dt_string_send){
   sprintf(dt_string_send, "[%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d]", 
     dt_params_send_recv->lighting_states.l1, dt_params_send_recv->lighting_states.l2, dt_params_send_recv->lighting_states.led,
     dt_params_send_recv->params_led.effect,
@@ -295,9 +298,9 @@ void cnv_send(params_send_recv_t *dt_params_send_recv, char *dt_string_send){
     dt_params_send_recv->params_led.per_r, dt_params_send_recv->params_led.per_g, dt_params_send_recv->params_led.per_b,
     dt_params_send_recv->params_led.des_r, dt_params_send_recv->params_led.des_g, dt_params_send_recv->params_led.des_b
   );
-}
+}*/
 
-int cnv_recv(params_send_recv_t *params_send_recv, char *dt_string_send, int len){
+/*int cnv_recv(params_send_recv_t *params_send_recv, char *dt_string_send, int len){
   char *txt, extract[128];
   int count_0 = len-1, count_1 = 0, init, end;
   bool ok = false;
@@ -362,9 +365,9 @@ int cnv_recv(params_send_recv_t *params_send_recv, char *dt_string_send, int len
   } else {
     return -1;
   }
-}
+}*/
 
-void cnv_sdrv_to_lgpl(params_send_recv_t *params_send_recv, lighting_states_t *lighting_states, params_led_t *params_led){
+/*void cnv_sdrv_to_lgpl(params_send_recv_t *params_send_recv, lighting_states_t *lighting_states, params_led_t *params_led){
   lighting_states->l1 = params_send_recv->lighting_states.l1;
   lighting_states->l2 = params_send_recv->lighting_states.l2;
   lighting_states->led = params_send_recv->lighting_states.led;
@@ -383,9 +386,9 @@ void cnv_sdrv_to_lgpl(params_send_recv_t *params_send_recv, lighting_states_t *l
   params_led->amp_b = params_send_recv->params_led.amp_b;
   params_led->per_b = params_send_recv->params_led.per_b;
   params_led->des_b = params_send_recv->params_led.des_b;
-}
+}*/
 
-void cnv_lgpl_to_sdrv(params_send_recv_t *params_send_recv, lighting_states_t *lighting_states, params_led_t *params_led){
+/*void cnv_lgpl_to_sdrv(params_send_recv_t *params_send_recv, lighting_states_t *lighting_states, params_led_t *params_led){
   params_send_recv->lighting_states.l1 = lighting_states->l1;
   params_send_recv->lighting_states.l2 = lighting_states->l2;
   params_send_recv->lighting_states.led = lighting_states->led;
@@ -404,4 +407,6 @@ void cnv_lgpl_to_sdrv(params_send_recv_t *params_send_recv, lighting_states_t *l
   params_send_recv->params_led.amp_b = params_led->amp_b;
   params_send_recv->params_led.per_b = params_led->per_b;
   params_send_recv->params_led.des_b = params_led->des_b;
-}
+}*/
+
+#endif
