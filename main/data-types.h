@@ -28,21 +28,24 @@ typedef enum {
 
   /* Dados queue Iluminação */
 typedef struct {
-  uint16_t intensity;
+  bool l1;
+  bool l2;
+  bool led;
+  uint8_t mode;
+} lighting_states_t;
+
+typedef struct {
   uint16_t amp;
   uint16_t per;
   uint16_t des;
 } led_params_t;
 
 typedef struct {
-  bool l1;
-  bool l2;
-  bool led;
-  uint8_t mode;
-  /*led_params_t led_r;
-  led_params_t led_g;
-  led_params_t led_b;*/
-} lighting_states_t;
+  bool fx;
+  led_params_t r;
+  led_params_t g;
+  led_params_t b;
+} led_states_rgb_t;
 
   /* ID para JSON */
 typedef enum {

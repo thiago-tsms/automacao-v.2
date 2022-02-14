@@ -1,11 +1,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-//#include <math.h>
+#include <math.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 //#include "freertos/timers.h"
 
 #include "driver/gpio.h"
@@ -16,7 +17,7 @@
 #include "nvs_flash.h"
 
 #include "esp_log.h"
-//#include "esp_system.h"
+#include "esp_system.h"
 
 #include "data-types.h"
 #include "json-parse.h"
@@ -58,7 +59,12 @@ float pwm_phase[3] = {0, 0, 0};
 #define TIME_INTERRUPT 90 //(ms)
 
 
-  /* Parametros Queue e Set*/
+  /* Parametros Task */
+TaskHandle_t xHandle_central_control;
+TaskHandle_t xHandle_lighting_control;
+
+
+  /* Parametros Queue e Set */
 #define QUEUE_LENGHT_INTERRUPT_TIMER 6
 #define QUEUE_LENGHT_WIFI_SEND 6
 #define QUEUE_LENGHT_WIFI_RECV 8
@@ -72,10 +78,29 @@ QueueHandle_t queue_wifi_recv;
 QueueSetHandle_t queueSet_control_recv;
 
 
+  /* Parametros Semaphore */
+#define xTicksToWait_semaphore_lighting_states pdMS_TO_TICKS(150)
+SemaphoreHandle_t semaphore_lighting_states;
+#define xTicksToWait_semaphore_led_states pdMS_TO_TICKS(150)
+SemaphoreHandle_t semaphore_led_states;
+
+
+  /* Parametros Notify */
+#define NOTIFY_LED_ON_OFF 0x1
+#define NOTIFY_LED_STATE 0x2
+
+
   /* Variáveis Gerais */
 lighting_states_t lighting_states = {false, false, false, 1};
+led_states_rgb_t led_states_rgb[4] = {  {false, {1023, 0, 0}, {0, 0, 0}, {0, 0, 0}}, 
+                                        {false, {0, 0, 0}, {1023, 0, 0}, {0, 0, 0}}, 
+                                        {false, {0, 0, 0}, {0, 0, 0}, {1023, 0, 0}}, 
+                                        {false, {1023, 0, 0}, {1023, 0, 0}, {1023, 0, 0}}
+                                      };
 
 
+
+  /* Variáveis Gerais */
 /*#define xDelay_start pdMS_TO_TICKS(100)
 
 #define xDelay_storage_lighting_states pdMS_TO_TICKS(15000)
@@ -149,6 +174,12 @@ void app_main(){
 
   ESP_LOGI(TAG_MAIN, "Inicializando...");
 
+    // Cria semáforo
+  semaphore_lighting_states = xSemaphoreCreateBinary();
+  xSemaphoreGive(semaphore_lighting_states);
+  semaphore_led_states = xSemaphoreCreateBinary();
+  xSemaphoreGive(semaphore_led_states);
+
     // Cria Queue
   ESP_LOGI(TAG_MAIN, "Criando Queue");
   queue_interrupt_timer = xQueueCreate(QUEUE_LENGHT_INTERRUPT_TIMER, QUEUE_SIZE_INTERRUPT_TIMER);
@@ -158,7 +189,6 @@ void app_main(){
 
   queue_wifi_send = xQueueCreate(QUEUE_LENGHT_WIFI_SEND, QUEUE_SIZE_WIFI_SEND);
   vQueueAddToRegistry(queue_wifi_send, "queue-wifi-send");
-
 
     // Cria Set
   ESP_LOGI(TAG_MAIN, "Criando Set");
@@ -177,17 +207,16 @@ void app_main(){
   peripherals_config();
 
   /*storage_lighting_states_queue = xQueueCreate(1, sizeof(lighting_states_t));
-  storage_params_led_queue = xQueueCreate(1, sizeof(params_send_recv_t));
-  effect_led_queue = xQueueCreate(4, sizeof(params_led_t));*/
-
+  storage_params_led_queue = xQueueCreate(1, sizeof(params_send_recv_t));*/
+  
       // Inicialização API Software Timer
   /*storage_lighting_states_timer =  xTimerCreate("storage-lighting-states", xDelay_storage_lighting_states, pdFALSE, NULL, storage_lighting_states);
   storage_params_led_timer = xTimerCreate("storage_params_led_timer", xDelay_storage_led_states, pdFALSE, NULL, storage_effect_led_states);*/
 
     // Inicia tarefas (task)
   ESP_LOGI(TAG_MAIN, "Iniciando Tasks");
-  xTaskCreate(central_control_task, "central-control-task", 5000, NULL, 2, NULL);
-  xTaskCreate(lighting_control_task, "lighting-control-task", 2000, NULL, 1, NULL);
+  xTaskCreate(central_control_task, "central-control-task", 5000, NULL, 2, &xHandle_central_control);
+  xTaskCreate(lighting_control_task, "lighting-control-task", 2000, NULL, 1, &xHandle_lighting_control);
 
     // Queue Wifi
   /*send_data_queue = xQueueCreate(6, sizeof(params_send_recv_t));
@@ -253,8 +282,6 @@ void peripherals_config(){
   hw_timer_init(sweep_switches, NULL);
   hw_timer_alarm_us((TIME_INTERRUPT * 1000), true);
 }
-
-
 
 
 /* -- -- Funções de interrupção e timer -- -- */
@@ -386,7 +413,7 @@ void central_control_task(void *params){
 
         action = select_button_action(&btn_action);
         update_lighting(action);
-        update_wifi(action);
+        //update_wifi(action);
       }
 
     }
@@ -490,38 +517,80 @@ void central_control_task(void *params){
 
   /* Controla os periféricos */
 void lighting_control_task(void *params){
+  
+  uint32_t notify_data;
+  bool update = true;
   uint16_t R = 0, G = 0, B = 0;
+  float time = 0;
+  
+  bool status_led = lighting_states.led;
+  uint8_t mode = lighting_states.mode;
+  led_states_rgb_t led_states;
+  led_states.fx = led_states_rgb[mode].fx;
+  led_states.r.amp = led_states_rgb[mode].r.amp;
+  led_states.r.per = led_states_rgb[mode].r.per;
+  led_states.r.des = led_states_rgb[mode].r.des;
+  led_states.g.amp = led_states_rgb[mode].g.amp;
+  led_states.g.per = led_states_rgb[mode].g.per;
+  led_states.g.des = led_states_rgb[mode].g.des;
+  led_states.b.amp = led_states_rgb[mode].b.amp;
+  led_states.b.per = led_states_rgb[mode].b.per;
+  led_states.b.des = led_states_rgb[mode].b.des;
 
-  /*params_led_t params_mode_effect_led;
-  uint16_t R = 0, G = 0, B = 0;
-  float time = 0;*/
 
   while(true){
-    /*while(uxQueueMessagesWaiting(effect_led_queue) > 0){
-      xQueueReceive(effect_led_queue, &params_mode_effect_led, 0);
+
+      // Recebe uma notificação
+    xTaskNotifyWait(0, 0xffffffff, &notify_data, 0);
+
+    if(notify_data == NOTIFY_LED_ON_OFF){
+      notify_data = 0;
+      status_led = lighting_states.led;
+      update = true;
+
+    } else if(notify_data == NOTIFY_LED_STATE){
+      notify_data = 0;
+      mode = lighting_states.mode;
+      led_states.fx = led_states_rgb[mode].fx;
+      led_states.r.amp = led_states_rgb[mode].r.amp;
+      led_states.r.per = led_states_rgb[mode].r.per;
+      led_states.r.des = led_states_rgb[mode].r.des;
+      led_states.g.amp = led_states_rgb[mode].g.amp;
+      led_states.g.per = led_states_rgb[mode].g.per;
+      led_states.g.des = led_states_rgb[mode].g.des;
+      led_states.b.amp = led_states_rgb[mode].b.amp;
+      led_states.b.per = led_states_rgb[mode].b.per;
+      led_states.b.des = led_states_rgb[mode].b.des;
+
+      update = true;
     }
 
-    time += xDelay_effect_led_task;
-  
-    if(!params_mode_effect_led.effect){
-      R = params_mode_effect_led.R;
-      G = params_mode_effect_led.G;
-      B = params_mode_effect_led.B;
 
-    } else {
-      R = (params_mode_effect_led.amp_r/2) + (params_mode_effect_led.amp_r/2) * sin((params_mode_effect_led.per_r * time / 1000) + params_mode_effect_led.des_r / 1000);
-      G = (params_mode_effect_led.amp_g/2) + (params_mode_effect_led.amp_g/2) * sin((params_mode_effect_led.per_g * time / 1000) + params_mode_effect_led.des_g / 1000);
-      B = (params_mode_effect_led.amp_b/2) + (params_mode_effect_led.amp_b/2) * sin((params_mode_effect_led.per_b * time / 1000) + params_mode_effect_led.des_b / 1000);
+    if(update){
+      update = false;
+
+      if(!status_led){
+        pwm_stop(0);
+
+      } else if(!led_states.fx){
+        pwm_set_duty(0, led_states_rgb[mode].r.amp);
+        pwm_set_duty(1, led_states_rgb[mode].g.amp);
+        pwm_set_duty(2, led_states_rgb[mode].b.amp);
+        pwm_start();
+
+      } else {
+        time += xDelay_Lighting_Control_Task;
+          
+        R = (led_states.r.amp/2) + (led_states.r.amp/2) * sin((led_states.r.per * time / 10000) + led_states.r.des / 1000);
+        G = (led_states.g.amp/2) + (led_states.g.amp/2) * sin((led_states.g.per * time / 10000) + led_states.g.des / 1000);
+        B = (led_states.b.amp/2) + (led_states.b.amp/2) * sin((led_states.b.per * time / 10000) + led_states.b.des / 1000);
+        
+        pwm_set_duty(0, R);
+        pwm_set_duty(1, G);
+        pwm_set_duty(2, B);
+        pwm_start();
+      }
     }
-
-    R = (R == 0) ? 0 : ((R * 4) + 3);
-    G = (G == 0) ? 0 : ((G * 4) + 3);
-    B = (B == 0) ? 0 : ((B * 4) + 3);
-
-    pwm_set_duty(0, R);
-    pwm_set_duty(1, G);
-    pwm_set_duty(2, B);
-    pwm_start();*/
 
     vTaskDelay(xDelay_Lighting_Control_Task);
   }
@@ -530,6 +599,7 @@ void lighting_control_task(void *params){
   /* Atualiza o envio e recepção de dados para o wifi */
 void wifi_control_task(void *params){
   char *json_string = NULL;
+  data_json_t json_data;
 
   while(1){
 
@@ -602,81 +672,90 @@ actions_t select_button_action(action_interrupt_timer_t *btn_action){
     else return actions_t::UPDATE_MODO_UP_LD_3;
 
     // BT 2
-  }else if(btn_action->id == btn_id_t::BT_2){
+  } else if(btn_action->id == btn_id_t::BT_2){
     ESP_LOGI(TAG_LD_CONTROL, "Botão 2 precionado");
 
     if(!flag) return actions_t::UPDATE_LD_2;
     else return actions_t::UPDATE_MODO_DOWN_LD_3;
 
     // BT 3
-  }else if(btn_action->id == btn_id_t::BT_3){
+  } else if(btn_action->id == btn_id_t::BT_3){
     ESP_LOGI(TAG_LD_CONTROL, "Botão 3 precionado");
 
-    if(btn_action->time > 20000){
-      esp_restart();
-
-    } if(btn_action->time > 3000){
-      ESP_LOGI(TAG_LD_CONTROL, "Controle LED");
-
-      flag = !flag;
-
-    }else if(!flag) return actions_t::UPDATE_STATUS_LD_3;
+    if(btn_action->time > 20000) esp_restart();
+    else if(btn_action->time > 2500) flag = !flag;
+    else if(!flag) return actions_t::UPDATE_STATUS_LD_3;
     else flag = !flag;
-  }
-
+  } 
+    
   return actions_t::NOTHING;
 }
 
   /* Executa as ações a serem tomadas */
 void update_lighting(actions_t action){
 
-    // LD 1 - ON/OFF
-  if(action == actions_t::UPDATE_LD_1) {
-    lighting_states.l1 = !lighting_states.l1;
-    gpio_set_level(LD1, lighting_states.l1);
+    // Verifica se a variável está disponível para leitura e escrita
+  if(xSemaphoreTake(semaphore_lighting_states, xTicksToWait_semaphore_lighting_states) == pdPASS){
 
-    ESP_LOGI(TAG_LD_CONTROL, "Atualizando LD1: %d", lighting_states.l1);
-  
-
-    // LD 2 - ON/OFF
-  } else if(action == actions_t::UPDATE_LD_2) {
-    lighting_states.l2 = !lighting_states.l2;
-    gpio_set_level(LD2, !lighting_states.l2);
-
-    ESP_LOGI(TAG_LD_CONTROL, "Atualizando LD2: %d", lighting_states.l2);
+      // LD 1 - ON/OFF
+    if(action == actions_t::UPDATE_LD_1) {
+      lighting_states.l1 = !lighting_states.l1;
+      gpio_set_level(LD1, lighting_states.l1);
+        
+      ESP_LOGI(TAG_LD_CONTROL, "Atualizando LD1: %d", lighting_states.l1);
 
 
-    // LD 3 (LED) - ON/OFF
-  } else if(action == actions_t::UPDATE_STATUS_LD_3){
-    lighting_states.led = !lighting_states.led;
+      // LD 2 - ON/OFF
+    } else if(action == actions_t::UPDATE_LD_2) {
+      lighting_states.l2 = !lighting_states.l2;
+      gpio_set_level(LD2, !lighting_states.l2);
 
-    ESP_LOGI(TAG_LD_CONTROL, "Atualizando LED: %d", lighting_states.led);
+      ESP_LOGI(TAG_LD_CONTROL, "Atualizando LD2: %d", lighting_states.l2);
 
 
-    // LD 3 (LED) - MODE UP
-  } else if(action == actions_t::UPDATE_MODO_UP_LD_3) {
-    lighting_states.mode++;
-    if(lighting_states.mode > 3){
-      if(lighting_states.mode > 100) lighting_states.mode = 3;
-      else lighting_states.mode = 0;
+      // LD 3 (LED) - ON/OFF
+    } else if(action == actions_t::UPDATE_STATUS_LD_3){
+      lighting_states.led = !lighting_states.led;
+
+        //Notifica alteração do led
+      xTaskNotify(xHandle_lighting_control, NOTIFY_LED_ON_OFF, eSetBits);
+
+      ESP_LOGI(TAG_LD_CONTROL, "Atualizando LED: %d", lighting_states.led);
+
+
+      // LD 3 (LED) - MODE UP
+    } else if(action == actions_t::UPDATE_MODO_UP_LD_3) {
+      lighting_states.mode++;
+      if(lighting_states.mode > 3){
+        if(lighting_states.mode > 100) lighting_states.mode = 3;
+        else lighting_states.mode = 0;
+      }
+
+        //Notifica alteração do led
+      xTaskNotify(xHandle_lighting_control, NOTIFY_LED_STATE, eSetBits);
+
+      ESP_LOGI(TAG_LD_CONTROL, "Atualizando Modo: %d", lighting_states.mode);
+
+
+      // LD 3 (LED) - MODE DOWN
+    } else if(action == actions_t::UPDATE_MODO_DOWN_LD_3) {
+      lighting_states.mode--;
+      if(lighting_states.mode > 3){
+        if(lighting_states.mode > 100) lighting_states.mode = 3;
+        else lighting_states.mode = 0;
+      }
+
+        //Notifica alteração do led
+      xTaskNotify(xHandle_lighting_control, NOTIFY_LED_STATE, eSetBits);
+
+      ESP_LOGI(TAG_LD_CONTROL, "Atualizando Modo: %d", lighting_states.mode);
+
+      // Nenhuma ação
+    } else {
+      ESP_LOGI(TAG_LD_CONTROL, "Nenhuma ação válida");
     }
-
-    ESP_LOGI(TAG_LD_CONTROL, "Atualizando Modo: %d", lighting_states.mode);
-
-
-    // LD 3 (LED) - MODE DOWN
-  } else if(action == actions_t::UPDATE_MODO_DOWN_LD_3) {
-    lighting_states.mode--;
-    if(lighting_states.mode > 3){
-      if(lighting_states.mode > 100) lighting_states.mode = 3;
-      else lighting_states.mode = 0;
-    }
-
-    ESP_LOGI(TAG_LD_CONTROL, "Atualizando Modo: %d", lighting_states.mode);
-
-    // Nenhuma ação
-  } else {
-    ESP_LOGI(TAG_LD_CONTROL, "Nenhuma ação válida");
+    
+    xSemaphoreGive(semaphore_lighting_states);
   }
 }
 
@@ -703,7 +782,7 @@ void update_wifi(actions_t action){
     // LD 3 (LED) - MODE
   } else if(action == actions_t::UPDATE_STATUS_LD_3 || action == actions_t::UPDATE_MODO_UP_LD_3 || action == actions_t::UPDATE_MODO_DOWN_LD_3){
     json_data.id = json_id_t::L3;
-    json_data.status = lighting_states.l3;
+    json_data.status = lighting_states.led;
     json_data.mode = lighting_states.mode;
 
     xQueueSendToBack(queue_wifi_send, &json_data, 0);
