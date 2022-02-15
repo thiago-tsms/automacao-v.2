@@ -24,7 +24,12 @@
 #include "wifi-conection.h"
 
 
+  /* Modos de Debug para compilação */
+#define DEBUG true
+
+
   /* Task Delay */
+#define xDelay_Task_Start pdMS_TO_TICKS(50)
 #define xDelay_Central_Control_Task pdMS_TO_TICKS(100)
 #define xDelay_Lighting_Control_Task pdMS_TO_TICKS(100)
 #define xDelay_Wifi_Control_Task pdMS_TO_TICKS(120)
@@ -88,16 +93,43 @@ SemaphoreHandle_t semaphore_led_states;
   /* Parametros Notify */
 #define NOTIFY_LED_ON_OFF 0x1
 #define NOTIFY_LED_STATE 0x2
+#define NOTIFY_LED_ALL 0x3
+
+
+  /* Parametros NVS */
+#define NVS_PARTITION_NAME_WIFI "WIFI"
+#define NVS_KEY_WIFI_SSID "SSID"
+#define NVS_KEY_WIFI_PASSWORD "PASS"
+#define NVS_KEY_WIFI_IP "IP"
+#define NVS_KEY_WIFI_GATEWAY "GATW"
+#define NVS_KEY_WIFI_NETMASK "NETM"
+#define NVS_KEY_WIFI_PORT "PORT"
+
+#define NVS_PARTITION_NAME_LIGHTING_STATES "LG_ST"
+#define NVS_KEY_L1 "L1"
+#define NVS_KEY_L2 "L2"
+#define NVS_KEY_LED "LED"
+#define NVS_KEY_LED_MODO "MODO"
+
+//#define nvs_partition_name_lighting_states "light_states"
+//#define nvs_partition_name_lighting_states "light_states"
+//#define nvs_key_lighting_states "key_ligh"
+//#define nvs_partition_name_effect_led "led_params"
+//#define nvs_key_effect_led "key_led_prm"
+
+
+  /* Parametros WiFi */
+char wifi_ssid[32];
+char wifi_password[32];
+char wifi_ip[20];
+char wifi_gateway[20];
+char wifi_netmask[20];
+char wifi_port[10];
 
 
   /* Variáveis Gerais */
-lighting_states_t lighting_states = {false, false, false, 1};
-led_states_rgb_t led_states_rgb[4] = {  {false, {1023, 0, 0}, {0, 0, 0}, {0, 0, 0}}, 
-                                        {false, {0, 0, 0}, {1023, 0, 0}, {0, 0, 0}}, 
-                                        {false, {0, 0, 0}, {0, 0, 0}, {1023, 0, 0}}, 
-                                        {false, {1023, 0, 0}, {1023, 0, 0}, {1023, 0, 0}}
-                                      };
-
+lighting_states_t lighting_states = DEFAULT_LIGHTING_STATES;
+led_states_rgb_t led_states_rgb[4] = DEFAULT_LED_STATES_RGB;
 
 
   /* Variáveis Gerais */
@@ -106,18 +138,8 @@ led_states_rgb_t led_states_rgb[4] = {  {false, {1023, 0, 0}, {0, 0, 0}, {0, 0, 
 #define xDelay_storage_lighting_states pdMS_TO_TICKS(15000)
 #define xDelay_storage_led_states pdMS_TO_TICKS(15000)
 
-#define nvs_partition_name_lighting_states "light_states"
-#define nvs_key_lighting_states "key_ligh"
-#define nvs_partition_name_effect_led "led_params"
-#define nvs_key_effect_led "key_led_prm"
-
-#define default_lighting_states {false,false,false,1}
-#define default_effect_led {{false,70,0,0,0,4,0,0,0,2,0,0,0}, {false,255,0,0,0,27,0,0,0,207,0,0,0}, {true,0,80,6,20,0,30,5,8,0,60,1,10}, {true,0,200,2,10,0,30,40,50,0,20,55,40}}
-
 const char *TAG_CONTROLE = "log-controle";
 const char *TAG_NVS = "log-nvs";*/
-
-
 
   /* Estados da iluminação */
 /*
@@ -147,6 +169,7 @@ int port = 6000;*/
 
   /* Escopo de funções */
 void nvs_start();
+void nvs_load_data();
 void peripherals_config();
 static void sweep_switches(void *params);
 
@@ -174,11 +197,13 @@ void app_main(){
 
   ESP_LOGI(TAG_MAIN, "Inicializando...");
 
+
     // Cria semáforo
   semaphore_lighting_states = xSemaphoreCreateBinary();
   xSemaphoreGive(semaphore_lighting_states);
   semaphore_led_states = xSemaphoreCreateBinary();
   xSemaphoreGive(semaphore_led_states);
+
 
     // Cria Queue
   ESP_LOGI(TAG_MAIN, "Criando Queue");
@@ -190,6 +215,7 @@ void app_main(){
   queue_wifi_send = xQueueCreate(QUEUE_LENGHT_WIFI_SEND, QUEUE_SIZE_WIFI_SEND);
   vQueueAddToRegistry(queue_wifi_send, "queue-wifi-send");
 
+
     // Cria Set
   ESP_LOGI(TAG_MAIN, "Criando Set");
   queueSet_control_recv = xQueueCreateSet(QUEUESET_LENGHT_RECV);
@@ -200,6 +226,7 @@ void app_main(){
     // Inicia NVS
   ESP_LOGI(TAG_MAIN, "Iniciando NVS");
   nvs_start();
+  nvs_load_data();
 
 
     // Configura periféricos
@@ -213,10 +240,12 @@ void app_main(){
   /*storage_lighting_states_timer =  xTimerCreate("storage-lighting-states", xDelay_storage_lighting_states, pdFALSE, NULL, storage_lighting_states);
   storage_params_led_timer = xTimerCreate("storage_params_led_timer", xDelay_storage_led_states, pdFALSE, NULL, storage_effect_led_states);*/
 
+
     // Inicia tarefas (task)
   ESP_LOGI(TAG_MAIN, "Iniciando Tasks");
   xTaskCreate(central_control_task, "central-control-task", 5000, NULL, 2, &xHandle_central_control);
   xTaskCreate(lighting_control_task, "lighting-control-task", 2000, NULL, 1, &xHandle_lighting_control);
+
 
     // Queue Wifi
   /*send_data_queue = xQueueCreate(6, sizeof(params_send_recv_t));
@@ -246,6 +275,58 @@ void nvs_start(){
     ESP_ERROR_CHECK(nvs_flash_init());
   }
   ESP_ERROR_CHECK(err);
+}
+
+  // Carrega informações da memória (NVS)
+void nvs_load_data(){
+  nvs_handle nvs_partition;
+  size_t nvs_size;
+
+    // Carrega dados para o WiFi
+  if(nvs_open(NVS_PARTITION_NAME_WIFI, NVS_READONLY, &nvs_partition) == ESP_OK){
+    nvs_size = sizeof(wifi_ssid);
+    nvs_get_str(nvs_partition, NVS_KEY_WIFI_SSID, wifi_ssid, &nvs_size);
+
+    nvs_size = sizeof(wifi_password);
+    nvs_get_str(nvs_partition, NVS_KEY_WIFI_PASSWORD, wifi_password, &nvs_size);
+
+    nvs_size = sizeof(wifi_ip);
+    nvs_get_str(nvs_partition, NVS_KEY_WIFI_IP, wifi_ip, &nvs_size);
+
+    nvs_size = sizeof(wifi_gateway);
+    nvs_get_str(nvs_partition, NVS_KEY_WIFI_GATEWAY, wifi_gateway, &nvs_size);
+
+    nvs_size = sizeof(wifi_netmask);
+    nvs_get_str(nvs_partition, NVS_KEY_WIFI_NETMASK, wifi_netmask, &nvs_size);
+
+    nvs_size = sizeof(wifi_port);
+    nvs_get_str(nvs_partition, NVS_KEY_WIFI_PORT, wifi_port, &nvs_size);
+  }
+  nvs_close(nvs_partition);
+
+
+    // Carrega dados da iluminação
+  if(nvs_open(NVS_PARTITION_NAME_LIGHTING_STATES, NVS_READONLY, &nvs_partition) == ESP_OK){
+    uint8_t nvs_uint8_data;
+
+    if(nvs_get_u8(nvs_partition, NVS_KEY_L1, &nvs_uint8_data) == ESP_OK) lighting_states.l1 = nvs_uint8_data;
+    if(nvs_get_u8(nvs_partition, NVS_KEY_L2, &nvs_uint8_data) == ESP_OK) lighting_states.l2 = nvs_uint8_data;
+    if(nvs_get_u8(nvs_partition, NVS_KEY_LED, &nvs_uint8_data) == ESP_OK) lighting_states.led = nvs_uint8_data;
+    nvs_get_u8(nvs_partition, NVS_KEY_LED_MODO, &(lighting_states.mode));
+  }
+  nvs_close(nvs_partition);
+
+
+  /*char key_ready[20];
+  size_t lenght;
+
+  nvs_handle storage_effect_led_nvs;
+  nvs_open(nvs_partition_name_effect_led, NVS_READONLY, &storage_effect_led_nvs);
+  for(uint8_t i = 0; i < 4; i++){
+    sprintf(key_ready, "%s_%d", nvs_key_effect_led, i+1);
+    nvs_get_blob(storage_effect_led_nvs, key_ready, &(params_mode_led[i]), &lenght);
+  }
+  nvs_close(storage_effect_led_nvs);*/
 }
 
   // Configuração de entrada, saída, interrupção e PWM
@@ -396,10 +477,15 @@ static void sweep_switches(void *params){
 
   // Task de controle geral
 void central_control_task(void *params){
+  vTaskDelay(xDelay_Task_Start);
+
   QueueSetMemberHandle_t set_recv;
 
   action_interrupt_timer_t btn_action;
   actions_t action;
+
+    // Atializa estados iniciais
+  update_lighting(actions_t::UPDATE_ALL);
 
   TickType_t reference_time_delay;
   while(true){
@@ -517,68 +603,50 @@ void central_control_task(void *params){
 
   /* Controla os periféricos */
 void lighting_control_task(void *params){
+  vTaskDelay(xDelay_Task_Start);
   
-  uint32_t notify_data;
-  bool update = true;
-  uint16_t R = 0, G = 0, B = 0;
   float time = 0;
-  
-  bool status_led = lighting_states.led;
-  uint8_t mode = lighting_states.mode;
+  uint32_t notify_data;
+  uint16_t R = 0, G = 0, B = 0;
+  uint8_t mode = 0;
+  bool status_led = false;  
   led_states_rgb_t led_states;
-  led_states.fx = led_states_rgb[mode].fx;
-  led_states.r.amp = led_states_rgb[mode].r.amp;
-  led_states.r.per = led_states_rgb[mode].r.per;
-  led_states.r.des = led_states_rgb[mode].r.des;
-  led_states.g.amp = led_states_rgb[mode].g.amp;
-  led_states.g.per = led_states_rgb[mode].g.per;
-  led_states.g.des = led_states_rgb[mode].g.des;
-  led_states.b.amp = led_states_rgb[mode].b.amp;
-  led_states.b.per = led_states_rgb[mode].b.per;
-  led_states.b.des = led_states_rgb[mode].b.des;
-
 
   while(true){
 
       // Recebe uma notificação
-    xTaskNotifyWait(0, 0xffffffff, &notify_data, 0);
+    if(xTaskNotifyWait(0, 0xffffffff, &notify_data, 0) ==pdTRUE){
 
-    if(notify_data == NOTIFY_LED_ON_OFF){
-      notify_data = 0;
-      status_led = lighting_states.led;
-      update = true;
-
-    } else if(notify_data == NOTIFY_LED_STATE){
-      notify_data = 0;
-      mode = lighting_states.mode;
-      led_states.fx = led_states_rgb[mode].fx;
-      led_states.r.amp = led_states_rgb[mode].r.amp;
-      led_states.r.per = led_states_rgb[mode].r.per;
-      led_states.r.des = led_states_rgb[mode].r.des;
-      led_states.g.amp = led_states_rgb[mode].g.amp;
-      led_states.g.per = led_states_rgb[mode].g.per;
-      led_states.g.des = led_states_rgb[mode].g.des;
-      led_states.b.amp = led_states_rgb[mode].b.amp;
-      led_states.b.per = led_states_rgb[mode].b.per;
-      led_states.b.des = led_states_rgb[mode].b.des;
-
-      update = true;
-    }
-
-
-    if(update){
-      update = false;
+      if(notify_data == NOTIFY_LED_ON_OFF || notify_data == NOTIFY_LED_ALL){
+        status_led = lighting_states.led;
+      }
+      
+      if(notify_data == NOTIFY_LED_STATE || notify_data == NOTIFY_LED_ALL){
+        mode = lighting_states.mode;
+        led_states.fx = led_states_rgb[mode].fx;
+        led_states.r.amp = led_states_rgb[mode].r.amp;
+        led_states.r.per = led_states_rgb[mode].r.per;
+        led_states.r.des = led_states_rgb[mode].r.des;
+        led_states.g.amp = led_states_rgb[mode].g.amp;
+        led_states.g.per = led_states_rgb[mode].g.per;
+        led_states.g.des = led_states_rgb[mode].g.des;
+        led_states.b.amp = led_states_rgb[mode].b.amp;
+        led_states.b.per = led_states_rgb[mode].b.per;
+        led_states.b.des = led_states_rgb[mode].b.des;
+      }
 
       if(!status_led){
         pwm_stop(0);
 
       } else if(!led_states.fx){
-        pwm_set_duty(0, led_states_rgb[mode].r.amp);
-        pwm_set_duty(1, led_states_rgb[mode].g.amp);
-        pwm_set_duty(2, led_states_rgb[mode].b.amp);
+        pwm_set_duty(0, led_states.r.amp);
+        pwm_set_duty(1, led_states.g.amp);
+        pwm_set_duty(2, led_states.b.amp);
         pwm_start();
+      }
+    }
 
-      } else {
+    if(status_led && led_states.fx){
         time += xDelay_Lighting_Control_Task;
           
         R = (led_states.r.amp/2) + (led_states.r.amp/2) * sin((led_states.r.per * time / 10000) + led_states.r.des / 1000);
@@ -590,7 +658,6 @@ void lighting_control_task(void *params){
         pwm_set_duty(2, B);
         pwm_start();
       }
-    }
 
     vTaskDelay(xDelay_Lighting_Control_Task);
   }
@@ -618,25 +685,7 @@ void wifi_control_task(void *params){
 /* -- -- Funções -- -- */
 
   // Carrega dados salvos na memória
-/*void load_lighting_states(lighting_states_t *lighting_states){
-  nvs_handle storage_lighting_states_nvs;
-  uint8_t load_data;
-  esp_err_t err;
 
-  nvs_open(nvs_partition_name_lighting_states, NVS_READONLY, &storage_lighting_states_nvs);
-  err = nvs_get_u8(storage_lighting_states_nvs, nvs_key_lighting_states, &load_data);
-  nvs_close(storage_lighting_states_nvs);
-
-  if(err == ESP_OK){
-    lighting_states->l1 = load_data & 0b10000000;
-    lighting_states->l2 = load_data & 0b01000000;
-    lighting_states->led = load_data & 0b00100000;
-    lighting_states->mode = load_data & 0b00001111;
-  
-  } else {
-    ESP_LOGE(TAG_NVS, "Erro load_lighting_states: %d", err);
-  }
-}*/
 
 /*void load_effect_led_states(params_led_t *params_mode_led){
   char key_ready[20];
@@ -683,7 +732,7 @@ actions_t select_button_action(action_interrupt_timer_t *btn_action){
     ESP_LOGI(TAG_LD_CONTROL, "Botão 3 precionado");
 
     if(btn_action->time > 20000) esp_restart();
-    else if(btn_action->time > 2500) flag = !flag;
+    else if(btn_action->time > 2000) flag = !flag;
     else if(!flag) return actions_t::UPDATE_STATUS_LD_3;
     else flag = !flag;
   } 
@@ -749,6 +798,12 @@ void update_lighting(actions_t action){
       xTaskNotify(xHandle_lighting_control, NOTIFY_LED_STATE, eSetBits);
 
       ESP_LOGI(TAG_LD_CONTROL, "Atualizando Modo: %d", lighting_states.mode);
+
+      // Todos
+    } else if(action == actions_t::UPDATE_ALL){
+      gpio_set_level(LD1, lighting_states.l1);
+      gpio_set_level(LD2, !lighting_states.l2);
+      xTaskNotify(xHandle_lighting_control, NOTIFY_LED_ALL, eSetBits);
 
       // Nenhuma ação
     } else {

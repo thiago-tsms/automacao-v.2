@@ -3,6 +3,10 @@
 
 #include <stdlib.h>
 
+  // Inicialização de variáveis
+#define DEFAULT_LIGHTING_STATES {false, false, false, 1}
+#define DEFAULT_LED_STATES_RGB {{false, {1023, 0, 0}, {0, 0, 0}, {0, 0, 0}}, {false, {0, 0, 0}, {1023, 0, 0}, {0, 0, 0}}, {false, {0, 0, 0}, {0, 0, 0}, {1023, 0, 0}}, {false, {1023, 0, 0}, {1023, 0, 0}, {1023, 0, 0}}}
+
   /* Identificador dos botões precionados */
 typedef enum {
   BT_1,
@@ -19,6 +23,7 @@ typedef struct {
   /* Identificador das ações a serem tomadas */
 typedef enum {
   NOTHING,
+  UPDATE_ALL,
   UPDATE_LD_1,
   UPDATE_LD_2,
   UPDATE_STATUS_LD_3,
