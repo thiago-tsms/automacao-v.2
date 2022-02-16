@@ -1,41 +1,41 @@
 #ifndef WIFI_CONECTION
 #define WIFI_CONECTION
 
-/*#include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <esp_wifi.h>
-#include <esp_event.h>
+//#include <esp_event.h>
 #include <esp_wifi_types.h>
 
-#include <nvs_flash.h>
+//#include <nvs_flash.h>
 
-#include "esp_log.h"
+//#include "esp_log.h"
 
-#include "lwip/sockets.h"
+//#include "lwip/sockets.h"
 
-#define xTime_close_conect pdMS_TO_TICKS(15000)*/
+/*#define xTime_close_conect pdMS_TO_TICKS(15000)*/
 
 /*const char *TAG_SERVER_WIFI = "log-server-wifi";
 const char *TAG_WIFI_STATUS = "log-status-wifi";*/
 
 
 /* VARIAVEIS */
-/*char *tcp_server_wifi_ssid, *tcp_server_wifi_password;
-int tcp_server_port;
+char *wifi_connection_sta_ssid, *wifi_connection_sta_password;
 tcpip_adapter_ip_info_t tcp_server_adapter_ip;
-TaskHandle_t control_tcp_server_wifi_task;
+uint16_t tcp_server_adapter_port;
+
+/*TaskHandle_t control_tcp_server_wifi_task;
 TaskHandle_t control_tcp_server_wifi_send_msg;
 TaskHandle_t control_tcp_server_wifi_recv_msg;
 TimerHandle_t time_recv_msg;*/
 
 
 /* ESCOPO */
-/*void tcp_server_wifi_login();
-void tcp_server_wifi_sta();
-void tcp_server_wifi_port();
-void tcp_server_wifi_nvs();
+void wifi_sta_connection_login(char *ssid, char *password);
+void wifi_sta_tcp_server_address(uint32_t *ip, uint32_t *gw, uint32_t *netmask, uint16_t *port);
+/*void tcp_server_wifi_nvs();
 void tcp_server_start();
 static void tcp_server_on_wifi();
 static void tcp_server_on_ip();
@@ -50,20 +50,18 @@ void cnv_lgpl_to_sdrv(params_send_recv_t *params_send_recv, lighting_states_t *l
 */
 
 /* FUNÇÕES */
-/*void tcp_server_wifi_login(char *ssid, char *password){
-  tcp_server_wifi_ssid = ssid;
-  tcp_server_wifi_password = password;
-}*/
+void wifi_sta_connection_login(char *ssid, char *password){
+  wifi_connection_sta_ssid = ssid;
+  wifi_connection_sta_password = password;
+}
 
-/*void tcp_server_wifi_sta(uint32_t *ip, uint32_t *gw, uint32_t *netmask){
-  IP4_ADDR(&tcp_server_adapter_ip.ip, ip[0], ip[1], ip[2], ip[3]);
-  IP4_ADDR(&tcp_server_adapter_ip.gw, gw[0], gw[1], gw[2], gw[3]);
-  IP4_ADDR(&tcp_server_adapter_ip.netmask, netmask[0], netmask[1], netmask[2], netmask[3]);
-}*/
+void wifi_sta_tcp_server_address(uint32_t *ip, uint32_t *gw, uint32_t *netmask, uint16_t *port){
+  IP4_ADDR(&tcp_server_adapter_ip.ip, ((*ip & 0xFF000000) >> 24), ((*ip & 0x00FF0000) >> 16), ((*ip & 0x0000FF00) >> 8), (*ip & 0x000000FF));
+  IP4_ADDR(&tcp_server_adapter_ip.gw, ((*gw & 0xFF000000) >> 24), ((*gw & 0x00FF0000) >> 16), ((*gw & 0x0000FF00) >> 8), (*gw & 0x000000FF));
+  IP4_ADDR(&tcp_server_adapter_ip.netmask, ((*netmask & 0xFF000000) >> 24), ((*netmask & 0x00FF0000) >> 16), ((*netmask & 0x0000FF00) >> 8), (*netmask & 0x000000FF));
+  tcp_server_adapter_port = *port;
+}
 
-/*void tcp_server_wifi_port(int port){
-  tcp_server_port = port;
-}*/
 
 /*void tcp_server_wifi_nvs(){
   esp_err_t err = nvs_flash_init();

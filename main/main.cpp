@@ -7,7 +7,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
-//#include "freertos/timers.h"
+#include "freertos/timers.h"
 
 #include "driver/gpio.h"
 #include "driver/hw_timer.h"
@@ -21,11 +21,8 @@
 
 #include "data-types.h"
 #include "json-parse.h"
-#include "wifi-conection.h"
-
-
-  /* Modos de Debug para compilação */
-#define DEBUG true
+#include "wifi-sta-server.h"
+#include "wifi-manager.h"
 
 
   /* Task Delay */
@@ -65,8 +62,13 @@ float pwm_phase[3] = {0, 0, 0};
 
 
   /* Parametros Task */
-TaskHandle_t xHandle_central_control;
-TaskHandle_t xHandle_lighting_control;
+TaskHandle_t xHandleTask_central_control;
+TaskHandle_t xHandleTask_lighting_control;
+
+
+  /* Parametros Software Timer */
+TimerHandle_t xHandleTimer_nvs_storage_lighting_states;
+#define xTimer_nvs_storage_lighting_states pdMS_TO_TICKS(10000)
 
 
   /* Parametros Queue e Set */
@@ -111,6 +113,8 @@ SemaphoreHandle_t semaphore_led_states;
 #define NVS_KEY_LED "LED"
 #define NVS_KEY_LED_MODO "MODO"
 
+#define NVS_PARTITION_NAME_RGB_STATES "RGB_ST"
+
 //#define nvs_partition_name_lighting_states "light_states"
 //#define nvs_partition_name_lighting_states "light_states"
 //#define nvs_key_lighting_states "key_ligh"
@@ -121,10 +125,10 @@ SemaphoreHandle_t semaphore_led_states;
   /* Parametros WiFi */
 char wifi_ssid[32];
 char wifi_password[32];
-char wifi_ip[20];
-char wifi_gateway[20];
-char wifi_netmask[20];
-char wifi_port[10];
+uint32_t wifi_ip;
+uint32_t wifi_gateway;
+uint32_t wifi_netmask;
+uint16_t wifi_port;
 
 
   /* Variáveis Gerais */
@@ -132,20 +136,16 @@ lighting_states_t lighting_states = DEFAULT_LIGHTING_STATES;
 led_states_rgb_t led_states_rgb[4] = DEFAULT_LED_STATES_RGB;
 
 
-  /* Variáveis Gerais */
-/*#define xDelay_start pdMS_TO_TICKS(100)
 
-#define xDelay_storage_lighting_states pdMS_TO_TICKS(15000)
-#define xDelay_storage_led_states pdMS_TO_TICKS(15000)
+/*
+//#define xDelay_storage_led_states_rgb pdMS_TO_TICKS(10000)
 
 const char *TAG_CONTROLE = "log-controle";
 const char *TAG_NVS = "log-nvs";*/
 
   /* Estados da iluminação */
 /*
-TimerHandle_t storage_lighting_states_timer;
 QueueHandle_t storage_lighting_states_queue;*/
-
 
   /* WiFi */
 /*typedef struct {
@@ -173,25 +173,22 @@ void nvs_load_data();
 void peripherals_config();
 static void sweep_switches(void *params);
 
-//void storage_lighting_states();
-//void storage_effect_led_states();
+void nvs_storage_lighting_states(TimerHandle_t xTimer);
+void nvs_storage_led_states_rgb();
 
 void central_control_task(void *params);
 void lighting_control_task(void *params);
 
 actions_t select_button_action(action_interrupt_timer_t *btn_action);
 void update_lighting(actions_t action);
+void update_storage_nvs(actions_t action);
 void update_wifi(actions_t action);
 
-
-/*void load_lighting_states(lighting_states_t *lighting_states);
-void load_effect_led_states(params_led_t *params_mode_led);
-bool compare_storage_effect_led_states(params_led_t *new_effect_led, params_led_t *old_effect_led);
-*/
 
 extern "C" {
   void app_main(void);
 }
+
 
 void app_main(){
 
@@ -199,6 +196,7 @@ void app_main(){
 
 
     // Cria semáforo
+  ESP_LOGI(TAG_MAIN, "Criando Semáforo");
   semaphore_lighting_states = xSemaphoreCreateBinary();
   xSemaphoreGive(semaphore_lighting_states);
   semaphore_led_states = xSemaphoreCreateBinary();
@@ -233,18 +231,16 @@ void app_main(){
   ESP_LOGI(TAG_MAIN, "Configurando IO - PWM - Hardware Timer");
   peripherals_config();
 
-  /*storage_lighting_states_queue = xQueueCreate(1, sizeof(lighting_states_t));
-  storage_params_led_queue = xQueueCreate(1, sizeof(params_send_recv_t));*/
-  
-      // Inicialização API Software Timer
-  /*storage_lighting_states_timer =  xTimerCreate("storage-lighting-states", xDelay_storage_lighting_states, pdFALSE, NULL, storage_lighting_states);
-  storage_params_led_timer = xTimerCreate("storage_params_led_timer", xDelay_storage_led_states, pdFALSE, NULL, storage_effect_led_states);*/
-
 
     // Inicia tarefas (task)
   ESP_LOGI(TAG_MAIN, "Iniciando Tasks");
-  xTaskCreate(central_control_task, "central-control-task", 5000, NULL, 2, &xHandle_central_control);
-  xTaskCreate(lighting_control_task, "lighting-control-task", 2000, NULL, 1, &xHandle_lighting_control);
+  xTaskCreate(central_control_task, "central-control-task", 5000, NULL, 2, &xHandleTask_central_control);
+  xTaskCreate(lighting_control_task, "lighting-control-task", 2000, NULL, 1, &xHandleTask_lighting_control);
+
+
+      // Inicialização API Software Timer
+  xHandleTimer_nvs_storage_lighting_states = xTimerCreate("nvs-storage-lighting-states", xTimer_nvs_storage_lighting_states, pdFALSE, NULL, nvs_storage_lighting_states);
+  /*storage_params_led_timer = xTimerCreate("storage_params_led_timer", xDelay_storage_led_states, pdFALSE, NULL, storage_effect_led_states);*/
 
 
     // Queue Wifi
@@ -258,7 +254,11 @@ void app_main(){
   tcp_server_wifi_port(port);
   tcp_server_start();
 
-  vTaskDelay(xDelay_start);*/
+  storage_lighting_states_queue = xQueueCreate(1, sizeof(lighting_states_t));
+  storage_params_led_queue = xQueueCreate(1, sizeof(params_send_recv_t));
+
+  */
+
 
   ESP_LOGI(TAG_MAIN, "Inicialização Finalizada");
   ESP_LOGI(TAG_MAIN, "Sistema em execução");
@@ -280,39 +280,47 @@ void nvs_start(){
   // Carrega informações da memória (NVS)
 void nvs_load_data(){
   nvs_handle nvs_partition;
+  esp_err_t err;
   size_t nvs_size;
 
     // Carrega dados para o WiFi
-  if(nvs_open(NVS_PARTITION_NAME_WIFI, NVS_READONLY, &nvs_partition) == ESP_OK){
+  err = nvs_open(NVS_PARTITION_NAME_WIFI, NVS_READONLY, &nvs_partition);
+  if(err == ESP_OK){
+    ESP_LOGV(TAG_LD_CONTROL, "Carregando dados NVS WiFi");
+
     nvs_size = sizeof(wifi_ssid);
     nvs_get_str(nvs_partition, NVS_KEY_WIFI_SSID, wifi_ssid, &nvs_size);
 
     nvs_size = sizeof(wifi_password);
     nvs_get_str(nvs_partition, NVS_KEY_WIFI_PASSWORD, wifi_password, &nvs_size);
 
-    nvs_size = sizeof(wifi_ip);
-    nvs_get_str(nvs_partition, NVS_KEY_WIFI_IP, wifi_ip, &nvs_size);
+    nvs_get_u32(nvs_partition, NVS_KEY_WIFI_IP, &wifi_ip);
+    nvs_get_u32(nvs_partition, NVS_KEY_WIFI_GATEWAY, &wifi_gateway);
+    nvs_get_u32(nvs_partition, NVS_KEY_WIFI_NETMASK, &wifi_netmask);
+    nvs_get_u16(nvs_partition, NVS_KEY_WIFI_PORT, &wifi_port);
 
-    nvs_size = sizeof(wifi_gateway);
-    nvs_get_str(nvs_partition, NVS_KEY_WIFI_GATEWAY, wifi_gateway, &nvs_size);
-
-    nvs_size = sizeof(wifi_netmask);
-    nvs_get_str(nvs_partition, NVS_KEY_WIFI_NETMASK, wifi_netmask, &nvs_size);
-
-    nvs_size = sizeof(wifi_port);
-    nvs_get_str(nvs_partition, NVS_KEY_WIFI_PORT, wifi_port, &nvs_size);
+    // Inicializa partição
+  } else if(err == ESP_ERR_NVS_NOT_INITIALIZED){
+    nvs_flash_init_partition(NVS_PARTITION_NAME_WIFI);
   }
   nvs_close(nvs_partition);
 
 
     // Carrega dados da iluminação
-  if(nvs_open(NVS_PARTITION_NAME_LIGHTING_STATES, NVS_READONLY, &nvs_partition) == ESP_OK){
+  err = nvs_open(NVS_PARTITION_NAME_LIGHTING_STATES, NVS_READONLY, &nvs_partition);
+  if(err == ESP_OK){
     uint8_t nvs_uint8_data;
+    
+    ESP_LOGV(TAG_LD_CONTROL, "Carregando dados NVS Iluminação");
 
     if(nvs_get_u8(nvs_partition, NVS_KEY_L1, &nvs_uint8_data) == ESP_OK) lighting_states.l1 = nvs_uint8_data;
     if(nvs_get_u8(nvs_partition, NVS_KEY_L2, &nvs_uint8_data) == ESP_OK) lighting_states.l2 = nvs_uint8_data;
     if(nvs_get_u8(nvs_partition, NVS_KEY_LED, &nvs_uint8_data) == ESP_OK) lighting_states.led = nvs_uint8_data;
     nvs_get_u8(nvs_partition, NVS_KEY_LED_MODO, &(lighting_states.mode));
+
+    // Inicializa partição
+  } else if(err == ESP_ERR_NVS_NOT_INITIALIZED){
+    nvs_flash_init_partition(NVS_PARTITION_NAME_LIGHTING_STATES);
   }
   nvs_close(nvs_partition);
 
@@ -419,8 +427,77 @@ static void sweep_switches(void *params){
 
 /* -- -- Funções de Software Timer API -- -- */
 
-  // Salvar da memória (nvs)
-/*void storage_lighting_states(){
+  // Salva estados na memória (NVS)
+void nvs_storage_lighting_states(TimerHandle_t xTimer){
+  nvs_handle nvs_partition;
+  esp_err_t err;
+
+  ESP_LOGV(TAG_LD_CONTROL, "Salvando estados na memória (NVS)");
+
+    // Abre partição
+  if(nvs_open(NVS_PARTITION_NAME_LIGHTING_STATES, NVS_READWRITE, &nvs_partition) == ESP_OK){
+    uint8_t nvs_uint8_data;
+    
+      // Verifica e salva L1
+    err = nvs_get_u8(nvs_partition, NVS_KEY_L1, &nvs_uint8_data);
+    if(err == ESP_ERR_NVS_NOT_FOUND || lighting_states.l1 != nvs_uint8_data){
+      nvs_uint8_data = lighting_states.l1;
+      if(nvs_set_u8(nvs_partition, NVS_KEY_L1, nvs_uint8_data) == ESP_OK) nvs_commit(nvs_partition);
+    }
+
+      // Verifica e salva L2
+    err = nvs_get_u8(nvs_partition, NVS_KEY_L2, &nvs_uint8_data);
+    if(err == ESP_ERR_NVS_NOT_FOUND || lighting_states.l2 != nvs_uint8_data){
+      nvs_uint8_data = lighting_states.l2;
+      if(nvs_set_u8(nvs_partition, NVS_KEY_L2, nvs_uint8_data) == ESP_OK) nvs_commit(nvs_partition);
+    }
+
+      // Verifica e salva L3
+    err = nvs_get_u8(nvs_partition, NVS_KEY_LED, &nvs_uint8_data);
+    if(err == ESP_ERR_NVS_NOT_FOUND || lighting_states.led != nvs_uint8_data){
+      nvs_uint8_data = lighting_states.led;
+      if(nvs_set_u8(nvs_partition, NVS_KEY_LED, nvs_uint8_data) == ESP_OK) nvs_commit(nvs_partition);
+    }
+
+      // Verifica e salva MODO
+    err = nvs_get_u8(nvs_partition, NVS_KEY_LED_MODO, &nvs_uint8_data);
+    if(err == ESP_ERR_NVS_NOT_FOUND || lighting_states.mode != nvs_uint8_data){
+      nvs_uint8_data = lighting_states.mode;
+      if(nvs_set_u8(nvs_partition, NVS_KEY_LED_MODO, nvs_uint8_data) == ESP_OK) nvs_commit(nvs_partition);
+    }
+  }
+  nvs_close(nvs_partition);
+}
+
+void nvs_storage_led_states_rgb(){
+//esp_err_t nvs_flash_init_partition(constesp_partition_t *partition)
+
+   /*params_send_recv_t params_led_update;
+  params_led_t old_params_led;
+  esp_err_t err;
+  size_t lenght;
+  char key_ready[20];
+  bool compare_storage = false;
+  
+  xQueueReceive(storage_params_led_queue, &params_led_update, 0);
+  
+  nvs_handle storage_effect_led_nvs;
+  sprintf(key_ready, "%s_%d", nvs_key_effect_led, params_led_update.lighting_states.mode);
+  ESP_ERROR_CHECK( nvs_open(nvs_partition_name_effect_led, NVS_READWRITE, &storage_effect_led_nvs) );
+  
+  err = nvs_get_blob(storage_effect_led_nvs, key_ready, &old_params_led, &lenght);
+  if(err == ESP_OK) compare_storage = compare_storage_effect_led_states(&(params_led_update.params_led), &old_params_led);
+  if(!compare_storage){
+    ESP_ERROR_CHECK( nvs_set_blob(storage_effect_led_nvs, key_ready, &(params_led_update.params_led), sizeof(params_led_t)) );
+    ESP_ERROR_CHECK( nvs_commit(storage_effect_led_nvs) );
+
+    ESP_LOGI(TAG_CONTROLE, "Salvar effect-led");
+  }
+  
+  nvs_close(storage_effect_led_nvs);*/
+
+    /*
+  
   lighting_states_t lighting_states_update;
   esp_err_t err;
 
@@ -444,33 +521,9 @@ static void sweep_switches(void *params){
   nvs_close(storage_lighting_states_nvs);
 
   ESP_LOGI(TAG_CONTROLE, "Salvar lighting_states");
-}*/
-
-/*void storage_effect_led_states(){
-  params_send_recv_t params_led_update;
-  params_led_t old_params_led;
-  esp_err_t err;
-  size_t lenght;
-  char key_ready[20];
-  bool compare_storage = false;
   
-  xQueueReceive(storage_params_led_queue, &params_led_update, 0);
-  
-  nvs_handle storage_effect_led_nvs;
-  sprintf(key_ready, "%s_%d", nvs_key_effect_led, params_led_update.lighting_states.mode);
-  ESP_ERROR_CHECK( nvs_open(nvs_partition_name_effect_led, NVS_READWRITE, &storage_effect_led_nvs) );
-  
-  err = nvs_get_blob(storage_effect_led_nvs, key_ready, &old_params_led, &lenght);
-  if(err == ESP_OK) compare_storage = compare_storage_effect_led_states(&(params_led_update.params_led), &old_params_led);
-  if(!compare_storage){
-    ESP_ERROR_CHECK( nvs_set_blob(storage_effect_led_nvs, key_ready, &(params_led_update.params_led), sizeof(params_led_t)) );
-    ESP_ERROR_CHECK( nvs_commit(storage_effect_led_nvs) );
-
-    ESP_LOGI(TAG_CONTROLE, "Salvar effect-led");
-  }
-  
-  nvs_close(storage_effect_led_nvs);
-}*/
+  */
+}
 
 
 /* -- -- Tarefas (Task) -- -- */
@@ -498,6 +551,7 @@ void central_control_task(void *params){
         xQueueReceive(queue_interrupt_timer, &btn_action, 0);
 
         action = select_button_action(&btn_action);
+        update_storage_nvs(action);
         update_lighting(action);
         //update_wifi(action);
       }
@@ -685,8 +739,6 @@ void wifi_control_task(void *params){
 /* -- -- Funções -- -- */
 
   // Carrega dados salvos na memória
-
-
 /*void load_effect_led_states(params_led_t *params_mode_led){
   char key_ready[20];
   size_t lenght;
@@ -715,21 +767,21 @@ actions_t select_button_action(action_interrupt_timer_t *btn_action){
 
     // BT 1
   if(btn_action->id == btn_id_t::BT_1){
-    ESP_LOGI(TAG_LD_CONTROL, "Botão 1 precionado");
+    ESP_LOGV(TAG_LD_CONTROL, "Botão 1 precionado");
 
     if(!flag) return actions_t::UPDATE_LD_1;
     else return actions_t::UPDATE_MODO_UP_LD_3;
 
     // BT 2
   } else if(btn_action->id == btn_id_t::BT_2){
-    ESP_LOGI(TAG_LD_CONTROL, "Botão 2 precionado");
+    ESP_LOGV(TAG_LD_CONTROL, "Botão 2 precionado");
 
     if(!flag) return actions_t::UPDATE_LD_2;
     else return actions_t::UPDATE_MODO_DOWN_LD_3;
 
     // BT 3
   } else if(btn_action->id == btn_id_t::BT_3){
-    ESP_LOGI(TAG_LD_CONTROL, "Botão 3 precionado");
+    ESP_LOGV(TAG_LD_CONTROL, "Botão 3 precionado");
 
     if(btn_action->time > 20000) esp_restart();
     else if(btn_action->time > 2000) flag = !flag;
@@ -751,7 +803,7 @@ void update_lighting(actions_t action){
       lighting_states.l1 = !lighting_states.l1;
       gpio_set_level(LD1, lighting_states.l1);
         
-      ESP_LOGI(TAG_LD_CONTROL, "Atualizando LD1: %d", lighting_states.l1);
+      ESP_LOGV(TAG_LD_CONTROL, "Modifica estado de LD1 para: %d", lighting_states.l1);
 
 
       // LD 2 - ON/OFF
@@ -759,7 +811,7 @@ void update_lighting(actions_t action){
       lighting_states.l2 = !lighting_states.l2;
       gpio_set_level(LD2, !lighting_states.l2);
 
-      ESP_LOGI(TAG_LD_CONTROL, "Atualizando LD2: %d", lighting_states.l2);
+      ESP_LOGV(TAG_LD_CONTROL, "Modifica estado de LD2 para: %d", lighting_states.l2);
 
 
       // LD 3 (LED) - ON/OFF
@@ -767,9 +819,9 @@ void update_lighting(actions_t action){
       lighting_states.led = !lighting_states.led;
 
         //Notifica alteração do led
-      xTaskNotify(xHandle_lighting_control, NOTIFY_LED_ON_OFF, eSetBits);
+      xTaskNotify(xHandleTask_lighting_control, NOTIFY_LED_ON_OFF, eSetBits);
 
-      ESP_LOGI(TAG_LD_CONTROL, "Atualizando LED: %d", lighting_states.led);
+      ESP_LOGV(TAG_LD_CONTROL, "Modifica estado de LED para: %d", lighting_states.led);
 
 
       // LD 3 (LED) - MODE UP
@@ -781,9 +833,9 @@ void update_lighting(actions_t action){
       }
 
         //Notifica alteração do led
-      xTaskNotify(xHandle_lighting_control, NOTIFY_LED_STATE, eSetBits);
+      xTaskNotify(xHandleTask_lighting_control, NOTIFY_LED_STATE, eSetBits);
 
-      ESP_LOGI(TAG_LD_CONTROL, "Atualizando Modo: %d", lighting_states.mode);
+      ESP_LOGV(TAG_LD_CONTROL, "Modifica Modo para: %d", lighting_states.mode);
 
 
       // LD 3 (LED) - MODE DOWN
@@ -795,22 +847,42 @@ void update_lighting(actions_t action){
       }
 
         //Notifica alteração do led
-      xTaskNotify(xHandle_lighting_control, NOTIFY_LED_STATE, eSetBits);
+      xTaskNotify(xHandleTask_lighting_control, NOTIFY_LED_STATE, eSetBits);
 
-      ESP_LOGI(TAG_LD_CONTROL, "Atualizando Modo: %d", lighting_states.mode);
+      ESP_LOGV(TAG_LD_CONTROL, "Modifica Modo para: %d", lighting_states.mode);
 
       // Todos
     } else if(action == actions_t::UPDATE_ALL){
       gpio_set_level(LD1, lighting_states.l1);
       gpio_set_level(LD2, !lighting_states.l2);
-      xTaskNotify(xHandle_lighting_control, NOTIFY_LED_ALL, eSetBits);
+      xTaskNotify(xHandleTask_lighting_control, NOTIFY_LED_ALL, eSetBits);
+
+      ESP_LOGV(TAG_LD_CONTROL, "Atualiza todas as saídas: {L1: %d} {L2: %d} {LED: %d} {Modo: %d}", lighting_states.l1, lighting_states.l2, lighting_states.led, lighting_states.mode);
 
       // Nenhuma ação
     } else {
-      ESP_LOGI(TAG_LD_CONTROL, "Nenhuma ação válida");
+      ESP_LOGV(TAG_LD_CONTROL, "Nenhuma ação especificada");
     }
     
     xSemaphoreGive(semaphore_lighting_states);
+  }
+}
+
+  // Inicia o contador para salvar os dados na memória (NVS)
+void update_storage_nvs(actions_t action){
+  if( 
+    action == actions_t::UPDATE_LD_1 ||
+    action == actions_t::UPDATE_LD_2 ||
+    action == actions_t::UPDATE_STATUS_LD_3 ||
+    action == actions_t::UPDATE_MODO_UP_LD_3 ||
+    action == actions_t::UPDATE_MODO_DOWN_LD_3
+  ){
+    if(xTimerIsTimerActive(xHandleTimer_nvs_storage_lighting_states) == pdFALSE) 
+      xTimerStart(xHandleTimer_nvs_storage_lighting_states, 0);
+    else
+      xTimerReset(xHandleTimer_nvs_storage_lighting_states, 0);
+
+    ESP_LOGV(TAG_LD_CONTROL, "Contador iniciado para salvamento de estados");
   }
 }
 
