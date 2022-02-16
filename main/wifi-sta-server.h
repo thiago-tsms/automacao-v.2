@@ -9,7 +9,7 @@
 //#include <esp_event.h>
 #include <esp_wifi_types.h>
 
-//#include <nvs_flash.h>
+#include <nvs_flash.h>
 
 //#include "esp_log.h"
 
@@ -17,8 +17,7 @@
 
 /*#define xTime_close_conect pdMS_TO_TICKS(15000)*/
 
-/*const char *TAG_SERVER_WIFI = "log-server-wifi";
-const char *TAG_WIFI_STATUS = "log-status-wifi";*/
+const char *TAG_WIFI_STA_TCP_SERVER = "log-wifi_sta-tcp-serveri";
 
 
 /* VARIAVEIS */
@@ -35,8 +34,10 @@ TimerHandle_t time_recv_msg;*/
 /* ESCOPO */
 void wifi_sta_connection_login(char *ssid, char *password);
 void wifi_sta_tcp_server_address(uint32_t *ip, uint32_t *gw, uint32_t *netmask, uint16_t *port);
-/*void tcp_server_wifi_nvs();
-void tcp_server_start();
+void wifi_sta_tcp_server_start_nvs();
+void wifi_sta_tcp_server_start();
+
+/*
 static void tcp_server_on_wifi();
 static void tcp_server_on_ip();
 void tcp_server_wifi_task(void *params);
@@ -49,30 +50,39 @@ void cnv_sdrv_to_lgpl(params_send_recv_t *params_send_recv, lighting_states_t *l
 void cnv_lgpl_to_sdrv(params_send_recv_t *params_send_recv, lighting_states_t *lighting_states, params_led_t *params_led);
 */
 
-/* FUNÇÕES */
+  /* FUNÇÕES */
+
+  //Informações para login na rede Wifi
 void wifi_sta_connection_login(char *ssid, char *password){
   wifi_connection_sta_ssid = ssid;
   wifi_connection_sta_password = password;
+
+  ESP_LOGV(TAG_WIFI_STA_TCP_SERVER, "SSID e Password inseridos");
 }
 
+  // Informações para o servidor
 void wifi_sta_tcp_server_address(uint32_t *ip, uint32_t *gw, uint32_t *netmask, uint16_t *port){
   IP4_ADDR(&tcp_server_adapter_ip.ip, ((*ip & 0xFF000000) >> 24), ((*ip & 0x00FF0000) >> 16), ((*ip & 0x0000FF00) >> 8), (*ip & 0x000000FF));
   IP4_ADDR(&tcp_server_adapter_ip.gw, ((*gw & 0xFF000000) >> 24), ((*gw & 0x00FF0000) >> 16), ((*gw & 0x0000FF00) >> 8), (*gw & 0x000000FF));
   IP4_ADDR(&tcp_server_adapter_ip.netmask, ((*netmask & 0xFF000000) >> 24), ((*netmask & 0x00FF0000) >> 16), ((*netmask & 0x0000FF00) >> 8), (*netmask & 0x000000FF));
   tcp_server_adapter_port = *port;
+
+  ESP_LOGV(TAG_WIFI_STA_TCP_SERVER, "IP, GATEWAY, NETMASK e PORT inseridos");
 }
 
-
-/*void tcp_server_wifi_nvs(){
+  // Inicia NVS
+void wifi_sta_tcp_server_start_nvs(){
   esp_err_t err = nvs_flash_init();
   if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
     ESP_ERROR_CHECK( nvs_flash_erase() );
     ESP_ERROR_CHECK( nvs_flash_init() );
   }
-}*/
 
-/*void tcp_server_start(){
-  tcpip_adapter_init();
+  ESP_LOGV(TAG_WIFI_STA_TCP_SERVER, "NVS Iniciada");
+}
+
+void wifi_sta_tcp_server_start(){
+  /*tcpip_adapter_init();
 
   ESP_ERROR_CHECK( tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA) );
   ESP_ERROR_CHECK( tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &tcp_server_adapter_ip) );
@@ -94,7 +104,9 @@ void wifi_sta_tcp_server_address(uint32_t *ip, uint32_t *gw, uint32_t *netmask, 
   ESP_ERROR_CHECK( tcpip_adapter_set_hostname(TCPIP_ADAPTER_IF_STA, "Wifi Esp8266") );
 
   ESP_ERROR_CHECK( esp_wifi_connect() );
-}*/
+
+  ESP_LOGV(TAG_WIFI_STA_TCP_SERVER, "WIFI STA TCP SERVER Iniciado");*/
+}
 
 /*static void tcp_server_on_wifi(void* arg, esp_event_base_t base, int32_t id, void* data) {
   switch(id){

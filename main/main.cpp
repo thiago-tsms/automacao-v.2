@@ -136,7 +136,6 @@ lighting_states_t lighting_states = DEFAULT_LIGHTING_STATES;
 led_states_rgb_t led_states_rgb[4] = DEFAULT_LED_STATES_RGB;
 
 
-
 /*
 //#define xDelay_storage_led_states_rgb pdMS_TO_TICKS(10000)
 
