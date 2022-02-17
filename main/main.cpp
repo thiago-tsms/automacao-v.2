@@ -30,6 +30,7 @@
 #define xDelay_Central_Control_Task pdMS_TO_TICKS(100)
 #define xDelay_Lighting_Control_Task pdMS_TO_TICKS(100)
 #define xDelay_Wifi_Control_Task pdMS_TO_TICKS(120)
+#define xDelay_Config_Wifi_Connection pdMS_TO_TICKS(100)
 
 
   /* TAG de Log */
@@ -67,8 +68,8 @@ TaskHandle_t xHandleTask_lighting_control;
 
 
   /* Parametros Software Timer */
-TimerHandle_t xHandleTimer_nvs_storage_lighting_states;
 #define xTimer_nvs_storage_lighting_states pdMS_TO_TICKS(10000)
+TimerHandle_t xHandleTimer_nvs_storage_lighting_states;
 
 
   /* Parametros Queue e Set */
@@ -87,8 +88,8 @@ QueueSetHandle_t queueSet_control_recv;
 
   /* Parametros Semaphore */
 #define xTicksToWait_semaphore_lighting_states pdMS_TO_TICKS(150)
-SemaphoreHandle_t semaphore_lighting_states;
 #define xTicksToWait_semaphore_led_states pdMS_TO_TICKS(150)
+SemaphoreHandle_t semaphore_lighting_states;
 SemaphoreHandle_t semaphore_led_states;
 
 
@@ -130,6 +131,9 @@ uint32_t wifi_gateway;
 uint32_t wifi_netmask;
 uint16_t wifi_port;
 
+  /* Parâmetros Configuração de conexão */
+#define TIME_TO_SEQUENCE pdMS_TO_TICKS(4000)
+
 
   /* Variáveis Gerais */
 lighting_states_t lighting_states = DEFAULT_LIGHTING_STATES;
@@ -156,22 +160,15 @@ QueueHandle_t storage_lighting_states_queue;*/
 QueueHandle_t recv_data_queue;
 QueueHandle_t new_conection_queue;*/
 
-//#include "tcp_server_wifi.h"
-
-/*char *ssid_wifi = "Alex";
-char *ssid_password = "9025al32";
-uint32_t ip[4] = {192, 168, 1, 100};
-uint32_t gateway[4] = {192, 168, 1, 1};
-uint32_t netmask[4] = {255, 255, 255, 0};
-int port = 6000;*/
-
 
   /* Escopo de funções */
 void nvs_start();
-void nvs_load_data();
 void peripherals_config();
+void nvs_load_data();
+void config_wifi_connection();
 static void sweep_switches(void *params);
 
+void nvs_storage_config_wifi_connection();
 void nvs_storage_lighting_states(TimerHandle_t xTimer);
 void nvs_storage_led_states_rgb();
 
@@ -219,7 +216,6 @@ void app_main(){
   xQueueAddToSet(queue_interrupt_timer, queueSet_control_recv);
   xQueueAddToSet(queue_wifi_recv, queueSet_control_recv);
 
-
     // Inicia NVS
   ESP_LOGI(TAG_MAIN, "Iniciando NVS");
   nvs_start();
@@ -229,6 +225,10 @@ void app_main(){
     // Configura periféricos
   ESP_LOGI(TAG_MAIN, "Configurando IO - PWM - Hardware Timer");
   peripherals_config();
+
+
+    // Verifica modo de inicialização
+  config_wifi_connection();
 
 
     // Inicia tarefas (task)
@@ -285,7 +285,7 @@ void nvs_load_data(){
     // Carrega dados para o WiFi
   err = nvs_open(NVS_PARTITION_NAME_WIFI, NVS_READONLY, &nvs_partition);
   if(err == ESP_OK){
-    ESP_LOGV(TAG_LD_CONTROL, "Carregando dados NVS WiFi");
+    ESP_LOGV(TAG_MAIN, "Carregando dados NVS WiFi");
 
     nvs_size = sizeof(wifi_ssid);
     nvs_get_str(nvs_partition, NVS_KEY_WIFI_SSID, wifi_ssid, &nvs_size);
@@ -310,7 +310,7 @@ void nvs_load_data(){
   if(err == ESP_OK){
     uint8_t nvs_uint8_data;
     
-    ESP_LOGV(TAG_LD_CONTROL, "Carregando dados NVS Iluminação");
+    ESP_LOGV(TAG_MAIN, "Carregando dados NVS Iluminação");
 
     if(nvs_get_u8(nvs_partition, NVS_KEY_L1, &nvs_uint8_data) == ESP_OK) lighting_states.l1 = nvs_uint8_data;
     if(nvs_get_u8(nvs_partition, NVS_KEY_L2, &nvs_uint8_data) == ESP_OK) lighting_states.l2 = nvs_uint8_data;
@@ -371,6 +371,31 @@ void peripherals_config(){
   hw_timer_alarm_us((TIME_INTERRUPT * 1000), true);
 }
 
+  // Configura informações de rede
+void config_wifi_connection(){
+  if(gpio_get_level(BT1) && gpio_get_level(BT2) && gpio_get_level(BT3)){
+    vTaskDelay(TIME_TO_SEQUENCE);
+
+      if(gpio_get_level(BT1) && !gpio_get_level(BT2) && gpio_get_level(BT3)){
+        ESP_LOGI(TAG_MAIN, "Iniciando modo de configuração de rede");
+
+        //wifi_manager_init();
+        //wifi_manager_start();
+
+        while(1){
+          vTaskDelay(xDelay_Config_Wifi_Connection);
+
+          /*if(wifi_manager_get_data_available()){
+            wifi_manager_get_data(wifi_ssid, wifi_password, &wifi_ip, &wifi_gateway, &wifi_netmask, &wifi_port);
+            nvs_storage_config_wifi_connection();
+          }*/
+        }
+
+        //wifi_manager_stop();
+    }
+  }
+}
+
 
 /* -- -- Funções de interrupção e timer -- -- */
 
@@ -426,6 +451,26 @@ static void sweep_switches(void *params){
 
 /* -- -- Funções de Software Timer API -- -- */
 
+  // Salva dados para Wifi e socket na memoria (NVS)
+void nvs_storage_config_wifi_connection(){
+  nvs_handle nvs_partition;
+  bool success = true;
+
+  if(nvs_set_str(nvs_partition, NVS_PARTITION_NAME_WIFI, wifi_ssid) != ESP_OK) success = false;
+  if(nvs_set_str(nvs_partition, NVS_KEY_WIFI_SSID, wifi_password) != ESP_OK) success = false;
+  if(nvs_set_u32(nvs_partition, NVS_KEY_WIFI_IP, wifi_ip) != ESP_OK) success = false;
+  if(nvs_set_u32(nvs_partition, NVS_KEY_WIFI_GATEWAY, wifi_gateway) != ESP_OK) success = false;
+  if(nvs_set_u32(nvs_partition, NVS_KEY_WIFI_NETMASK, wifi_netmask) != ESP_OK) success = false;
+  if(nvs_set_u16(nvs_partition, NVS_KEY_WIFI_PORT, wifi_port) != ESP_OK) success = false;
+
+  if(success){
+    nvs_commit(nvs_partition);
+    ESP_LOGV(TAG_MAIN, "Dados Wifi e Socket salvos com sucesso");
+  }
+  
+  nvs_close(nvs_partition);
+}
+
   // Salva estados na memória (NVS)
 void nvs_storage_lighting_states(TimerHandle_t xTimer){
   nvs_handle nvs_partition;
@@ -468,6 +513,7 @@ void nvs_storage_lighting_states(TimerHandle_t xTimer){
   nvs_close(nvs_partition);
 }
 
+  // Salva parâmetros dos efeitos do RGB na memória (NVS)
 void nvs_storage_led_states_rgb(){
 //esp_err_t nvs_flash_init_partition(constesp_partition_t *partition)
 

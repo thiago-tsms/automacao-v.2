@@ -1,5 +1,5 @@
-#ifndef WIFI_CONECTION
-#define WIFI_CONECTION
+#ifndef WIFI_STA_SERVER_CONECTION
+#define WIFI_STA_SERVER_CONECTION
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,7 +34,7 @@ TimerHandle_t time_recv_msg;*/
 /* ESCOPO */
 void wifi_sta_connection_login(char *ssid, char *password);
 void wifi_sta_tcp_server_address(uint32_t *ip, uint32_t *gw, uint32_t *netmask, uint16_t *port);
-void wifi_sta_tcp_server_start_nvs();
+void wifi_sta_tcp_server_nvs_start();
 void wifi_sta_tcp_server_start();
 
 /*
@@ -71,7 +71,7 @@ void wifi_sta_tcp_server_address(uint32_t *ip, uint32_t *gw, uint32_t *netmask, 
 }
 
   // Inicia NVS
-void wifi_sta_tcp_server_start_nvs(){
+void wifi_sta_tcp_server_nvs_start(){
   esp_err_t err = nvs_flash_init();
   if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
     ESP_ERROR_CHECK( nvs_flash_erase() );
