@@ -52,19 +52,37 @@ typedef struct {
   led_params_t b;
 } led_states_rgb_t;
 
-  /* ID para JSON */
+  /* Mascara para JSON */
 typedef enum {
-  ALL = 0,
-  L1 = 1,
-  L2 = 2,
-  L3 = 3
-} json_id_t;
+  ID    = 0b0000000000000001,
+  L1    = 0b0000000000000010,
+  L2    = 0b0000000000000100,
+  LED   = 0b0000000000001000,
+  MODE  = 0b0000000000010000,
+  FX    = 0b0000000000100000,
+  AMP_R = 0b0000000001000000,
+  PER_R = 0b0000000010000000,
+  DES_R = 0b0000000100000000,
+  AMP_G = 0b0000001000000000,
+  PER_G = 0b0000010000000000,
+  DES_G = 0b0000100000000000,
+  AMP_B = 0b0001000000000000,
+  PER_B = 0b0010000000000000,
+  DES_B = 0b0100000000000000
+} mask_json_t;
+
+/* ID para JSON */
+typedef enum {
+  NO_ACTION = 0,
+  DATA = 1
+} id_json_t;
 
   /* Dados para JSON */
 typedef struct {
-  json_id_t id;
-  bool status;
-  uint8_t mode;
+  id_json_t id;
+  uint16_t mask;
+  lighting_states_t ls;
+  led_states_rgb_t rgb;
 } data_json_t;
 
 #endif

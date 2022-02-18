@@ -454,18 +454,19 @@ void nvs_storage_config_wifi_connection(){
   nvs_handle nvs_partition;
   bool success = true;
 
-  if(nvs_set_str(nvs_partition, NVS_PARTITION_NAME_WIFI, wifi_ssid) != ESP_OK) success = false;
-  if(nvs_set_str(nvs_partition, NVS_KEY_WIFI_SSID, wifi_password) != ESP_OK) success = false;
-  if(nvs_set_u32(nvs_partition, NVS_KEY_WIFI_IP, wifi_ip) != ESP_OK) success = false;
-  if(nvs_set_u32(nvs_partition, NVS_KEY_WIFI_GATEWAY, wifi_gateway) != ESP_OK) success = false;
-  if(nvs_set_u32(nvs_partition, NVS_KEY_WIFI_NETMASK, wifi_netmask) != ESP_OK) success = false;
-  if(nvs_set_u16(nvs_partition, NVS_KEY_WIFI_PORT, wifi_port) != ESP_OK) success = false;
+  if(nvs_open(NVS_PARTITION_NAME_WIFI, NVS_READWRITE, &nvs_partition) == ESP_OK){
+    if(nvs_set_str(nvs_partition, NVS_PARTITION_NAME_WIFI, wifi_ssid) != ESP_OK) success = false;
+    if(nvs_set_str(nvs_partition, NVS_KEY_WIFI_SSID, wifi_password) != ESP_OK) success = false;
+    if(nvs_set_u32(nvs_partition, NVS_KEY_WIFI_IP, wifi_ip) != ESP_OK) success = false;
+    if(nvs_set_u32(nvs_partition, NVS_KEY_WIFI_GATEWAY, wifi_gateway) != ESP_OK) success = false;
+    if(nvs_set_u32(nvs_partition, NVS_KEY_WIFI_NETMASK, wifi_netmask) != ESP_OK) success = false;
+    if(nvs_set_u16(nvs_partition, NVS_KEY_WIFI_PORT, wifi_port) != ESP_OK) success = false;
 
-  if(success){
-    nvs_commit(nvs_partition);
-    ESP_LOGV(TAG_MAIN, "Dados Wifi e Socket salvos com sucesso");
+    if(success){
+      nvs_commit(nvs_partition);
+      ESP_LOGV(TAG_MAIN, "Dados Wifi e Socket salvos com sucesso");
+    }
   }
-  
   nvs_close(nvs_partition);
 }
 
@@ -596,7 +597,7 @@ void central_control_task(void *params){
         action = select_button_action(&btn_action);
         update_storage_nvs(action);
         update_lighting(action);
-        //update_wifi(action);
+        update_wifi(action);
       }
 
     }
@@ -762,7 +763,7 @@ void lighting_control_task(void *params){
 
   // Atualiza o envio e recepção de dados para o wifi
 void wifi_control_task(void *params){
-  char *json_string = NULL;
+  /*char *json_string = NULL;
   data_json_t json_data;
 
   while(1){
@@ -776,7 +777,7 @@ void wifi_control_task(void *params){
     }
 
     vTaskDelay(xDelay_Wifi_Control_Task);
-  }
+  }*/
 }
 
 /* -- -- Funções -- -- */
@@ -935,30 +936,45 @@ void update_wifi(actions_t action){
 
     // LD 1 - ON/OFF
   if(action == actions_t::UPDATE_LD_1) {
-    json_data.id = json_id_t::L1;
-    json_data.status = lighting_states.l1;
+    json_data.id = id_json_t::DATA;
+    json_data.mask = mask_json_t::L1;
+    json_data.ls.l1 = lighting_states.l1;   
 
-    xQueueSendToBack(queue_wifi_send, &json_data, 0);
+    //xQueueSendToBack(queue_wifi_send, &json_data, 0);
 
 
     // LD 2 - ON/OFF
   } else if(action == actions_t::UPDATE_LD_2){
-    json_data.id = json_id_t::L2;
-    json_data.status = lighting_states.l2;
+    json_data.id = id_json_t::DATA;
+    json_data.mask = mask_json_t::L2;
+    json_data.ls.l2 = lighting_states.l2;
 
-    xQueueSendToBack(queue_wifi_send, &json_data, 0);
-
-
-    // LD 3 (LED) - MODE
-  } else if(action == actions_t::UPDATE_STATUS_LD_3 || action == actions_t::UPDATE_MODO_UP_LD_3 || action == actions_t::UPDATE_MODO_DOWN_LD_3){
-    json_data.id = json_id_t::L3;
-    json_data.status = lighting_states.led;
-    json_data.mode = lighting_states.mode;
-
-    xQueueSendToBack(queue_wifi_send, &json_data, 0);
+    //xQueueSendToBack(queue_wifi_send, &json_data, 0);
 
 
+    // LD 3 (LED) - ON/OFF
+  } else if(action == actions_t::UPDATE_STATUS_LD_3){
+    json_data.id = id_json_t::DATA;
+    json_data.mask = mask_json_t::LED;
+    json_data.ls.led = lighting_states.led;
+
+    //xQueueSendToBack(queue_wifi_send, &json_data, 0);
+
+
+    // MODO
+  } else if(action == actions_t::UPDATE_MODO_UP_LD_3 || action == actions_t::UPDATE_MODO_DOWN_LD_3){
+    json_data.id = id_json_t::DATA;
+    json_data.mask = (mask_json_t::MODE) + (mask_json_t::FX);
+    json_data.ls.mode = lighting_states.mode;
+    json_data.rgb.fx = led_states_rgb[json_data.ls.mode].fx;
+  
+  
+    // Nenhuma ação
   } else {
-    ESP_LOGI(TAG_LD_CONTROL, "Nenhuma ação válida");
+    ESP_LOGV(TAG_LD_CONTROL, "Nenhuma ação válida");
   }
+
+  char *json_string = json_serialize(&json_data);
+  printf("%s\n", json_string);
+  json_string_free(json_string);
 }
