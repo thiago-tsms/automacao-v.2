@@ -21,8 +21,8 @@
 
 #include "data-types.h"
 #include "json-parse.h"
-#include "wifi-sta-server.h"
 #include "wifi-manager.h"
+#include "wifi-sta-socket-server.h"
 
 
   /* Task Delay */
@@ -216,6 +216,7 @@ void app_main(){
   xQueueAddToSet(queue_interrupt_timer, queueSet_control_recv);
   xQueueAddToSet(queue_wifi_recv, queueSet_control_recv);
 
+
     // Inicia NVS
   ESP_LOGI(TAG_MAIN, "Iniciando NVS");
   nvs_start();
@@ -227,7 +228,7 @@ void app_main(){
   peripherals_config();
 
 
-    // Verifica modo de inicialização
+    // Teste para modo de configuração de rede
   config_wifi_connection();
 
 
@@ -242,22 +243,19 @@ void app_main(){
   /*storage_params_led_timer = xTimerCreate("storage_params_led_timer", xDelay_storage_led_states, pdFALSE, NULL, storage_effect_led_states);*/
 
 
+    // Inicialização Wifi
+  //wifi_sta_socket_server_login(wifi_ssid, wifi_password);
+  //wifi_sta_socket_server_address(&wifi_ip, &wifi_gateway, &wifi_netmask, &wifi_port);
+  //wifi_sta_socket_server_start();
+
+
     // Queue Wifi
   /*send_data_queue = xQueueCreate(6, sizeof(params_send_recv_t));
   recv_data_queue = xQueueCreate(6, sizeof(params_send_recv_t));
-  new_conection_queue = xQueueCreate(1, sizeof(bool));
-
-    // Inicialização Wifi
-  tcp_server_wifi_login(ssid_wifi, ssid_password);
-  tcp_server_wifi_sta(ip, gateway, netmask);
-  tcp_server_wifi_port(port);
-  tcp_server_start();
-
-  storage_lighting_states_queue = xQueueCreate(1, sizeof(lighting_states_t));
+  new_conection_queue = xQueueCreate(1, sizeof(bool));*/
+  /*storage_lighting_states_queue = xQueueCreate(1, sizeof(lighting_states_t));
   storage_params_led_queue = xQueueCreate(1, sizeof(params_send_recv_t));
-
   */
-
 
   ESP_LOGI(TAG_MAIN, "Inicialização Finalizada");
   ESP_LOGI(TAG_MAIN, "Sistema em execução");
@@ -451,7 +449,7 @@ static void sweep_switches(void *params){
 
 /* -- -- Funções de Software Timer API -- -- */
 
-  // Salva dados para Wifi e socket na memoria (NVS)
+  // Salva dados para Wifi e Socket na memoria (NVS)
 void nvs_storage_config_wifi_connection(){
   nvs_handle nvs_partition;
   bool success = true;
@@ -700,7 +698,7 @@ void central_control_task(void *params){
   }*/  
 }
 
-  /* Controla os periféricos */
+  // Controla os periféricos
 void lighting_control_task(void *params){
   vTaskDelay(xDelay_Task_Start);
   
@@ -762,7 +760,7 @@ void lighting_control_task(void *params){
   }
 }
 
-  /* Atualiza o envio e recepção de dados para o wifi */
+  // Atualiza o envio e recepção de dados para o wifi
 void wifi_control_task(void *params){
   char *json_string = NULL;
   data_json_t json_data;
@@ -913,7 +911,7 @@ void update_lighting(actions_t action){
   }
 }
 
-  // Inicia o contador para salvar os dados na memória (NVS)
+  // Inicia o contador para salvar os estados na memória (NVS) [L1, L2, LED, MODO]
 void update_storage_nvs(actions_t action){
   if( 
     action == actions_t::UPDATE_LD_1 ||

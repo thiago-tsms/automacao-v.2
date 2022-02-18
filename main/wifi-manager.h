@@ -64,7 +64,7 @@ void wifi_manager_init(){
   ESP_LOGI(TAG_WIFI_MANAGER, "Wifi Manager Iniciado");
 }
 
-  /* Iniciando o Webserver */
+  // Iniciando o Webserver
 void wifi_manager_start(){  
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 
