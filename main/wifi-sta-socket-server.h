@@ -268,6 +268,24 @@ void wifi_sta_socket_server_send_msg_task(void *params){
   }
 
   vTaskDelete(NULL);*/
+
+  /*char *json_string = NULL;
+  data_json_t json_data;
+
+  while(1){
+
+      // Envia dados para o Wifi
+    while(uxQueueMessagesWaiting(queue_wifi_send) > 0){
+      json_string = json_serialize(&json_data);
+
+      ESP_LOGI(TAG_WIFI_CONTROL, "JSON %s", json_string);
+      json_string_free(json_string);
+    }
+
+    vTaskDelay(xDelay_Wifi_Control_Task);
+  }*/
+
+
 }
 
   // Task de envio de mensagens

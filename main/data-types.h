@@ -12,24 +12,38 @@ typedef enum {
   BT_1,
   BT_2,
   BT_3
-} btn_id_t;
+} btn_id_enum;
 
   /* Dados queue Interrupção de Timer */
 typedef struct {
-  btn_id_t id;
+  btn_id_enum id;
   uint16_t time;
 } action_interrupt_timer_t;
 
   /* Identificador das ações a serem tomadas */
 typedef enum {
   NOTHING,
-  UPDATE_ALL,
-  UPDATE_LD_1,
-  UPDATE_LD_2,
-  UPDATE_STATUS_LD_3,
-  UPDATE_MODO_UP_LD_3,
-  UPDATE_MODO_DOWN_LD_3
-} actions_t;
+  UPDATE_ALL_STATES,
+  ISR_L1,
+  ISR_L2,
+  ISR_LED,
+  ISR_MODO_UP,
+  ISR_MODO_DOWN,
+  WIFI_L1,
+  WIFI_L2,
+  WIFI_LED,
+  WIFI_MODO,
+  WIFI_FX,
+  WIFI_AMP_R,
+  WIFI_PER_R,
+  WIFI_DES_R,
+  WIFI_AMP_G,
+  WIFI_PER_G,
+  WIFI_DES_G,
+  WIFI_AMP_B,
+  WIFI_PER_B,
+  WIFI_DES_B
+} actions_enum;
 
   /* Dados queue Iluminação */
 typedef struct {
@@ -71,7 +85,7 @@ typedef enum {
   DES_B = 0b0100000000000000
 } mask_json_t;
 
-/* ID para JSON */
+/* ID ações WIFI */
 typedef enum {
   NO_ACTION = 0,
   DATA = 1
