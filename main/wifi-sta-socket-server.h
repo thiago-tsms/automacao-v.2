@@ -1,8 +1,6 @@
 #ifndef WIFI_STA_SOCKET_SERVER
 #define WIFI_STA_SOCKET_SERVER
 
-//#include <stdio.h>
-//#include <stdlib.h>
 #include <string.h>
 
 #include <esp_wifi.h>
@@ -14,7 +12,16 @@
 
 #include "lwip/sockets.h"
 
-/*#define xTime_close_conect pdMS_TO_TICKS(15000)*/
+
+  /* Task Delay */
+#define xDelay_Wifi_STA_Socket_Server_Control_Task pdMS_TO_TICKS(250)
+#define xDelay_Wifi_STA_Socket_Server_Send_msg_Task pdMS_TO_TICKS(200)
+#define xDelay_Wifi_STA_Socket_Server_Recv_msg_Task pdMS_TO_TICKS(200)
+
+
+  /* Parametros Software Timer */
+#define xTimer_wifi_sta_socket_server_time_limit pdMS_TO_TICKS(15000)
+TimerHandle_t xHandleTimer_wifi_sta_socket_server_time_limit;
 
 
   // Número máximo de conexões aquardando para poder se conectar
@@ -29,7 +36,11 @@
 const char *TAG_WIFI_STA_SOCKET_SERVER = "log-wifi_sta-socket-server";
 
 
-  /* VARIAVEIS */
+  /* Parâmetros de Socket */
+int sock;
+
+
+  /* Variáveis */
 char *wifi_sta_socket_server_ssid, *wifi_sta_socket_server_password;
 tcpip_adapter_ip_info_t wifi_sta_socket_server_adapter_ip;
 uint16_t wifi_sta_socket_server_adapter_port;
@@ -39,28 +50,20 @@ uint16_t wifi_sta_socket_server_adapter_port;
 void wifi_sta_socket_server_login(char *ssid, char *password);
 void wifi_sta_socket_server_address(uint32_t *ip, uint32_t *gw, uint32_t *netmask, uint16_t *port);
 void wifi_sta_socket_server_start();
+void wifi_sta_socket_server_stop();
 void wifi_sta_socket_server_event_handler_on_wifi(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
 void wifi_sta_socket_server_event_handler_on_ip(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 void wifi_sta_socket_server_control_task(void *params);
 void wifi_sta_socket_server_send_msg_task(void *params);
 void wifi_sta_socket_server_recv_msg_task(void *params);
-
-
-/*
-void tcp_server_wifi_task(void *params);
-void tcp_server_wifi_recv_msg_time();
-void cnv_send(params_send_recv_t *params_send_recv, char *dt_string_send);
-int cnv_recv(params_send_recv_t *dt_params_send_recv, char *dt_string_send, int len);
-void cnv_sdrv_to_lgpl(params_send_recv_t *params_send_recv, lighting_states_t *lighting_states, params_led_t *params_led);
-void cnv_lgpl_to_sdrv(params_send_recv_t *params_send_recv, lighting_states_t *lighting_states, params_led_t *params_led);
-*/
+void wifi_sta_socket_server_time_limit(TimerHandle_t xTimer);
 
 
   /* Parametros Task */
-TaskHandle_t xHandleTask_control_tcp_server_wifi;
-/*TaskHandle_t control_tcp_server_wifi_send_msg;
-TaskHandle_t control_tcp_server_wifi_recv_msg;
-TimerHandle_t time_recv_msg;*/
+TaskHandle_t xHandleTask_wifi_sta_socket_server_control;
+TaskHandle_t xHandleTask_wifi_sta_socket_server_send_msg;
+TaskHandle_t xHandleTask_wifi_sta_socket_server_recv_msg;
+
 
   /* FUNÇÕES */
 
@@ -112,6 +115,11 @@ void wifi_sta_socket_server_start(){
   ESP_LOGI(TAG_WIFI_STA_SOCKET_SERVER, "STA Socket Server Iniciado");
 }
 
+  // Para o STA Socker Server
+void wifi_sta_socket_server_stop(){
+  esp_wifi_stop();
+}
+
   // Handler IP (Conexão dos Clientes)
 void wifi_sta_socket_server_event_handler_on_ip(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data){
   ip_event_got_ip_t *event_data_cast = (ip_event_got_ip_t*) event_data;
@@ -135,15 +143,15 @@ void wifi_sta_socket_server_event_handler_on_wifi(void* arg, esp_event_base_t ev
     break;
 
     case WIFI_EVENT_STA_START:
-      xTaskCreate(wifi_sta_socket_server_control_task, "wifi-sta-socket-server-control-task", 2048, NULL, 2, &xHandleTask_control_tcp_server_wifi);
+      xTaskCreate(wifi_sta_socket_server_control_task, "wifi-sta-socket-server-control-task", 2048, NULL, 2, &xHandleTask_wifi_sta_socket_server_control);
       ESP_LOGI(TAG_WIFI_STA_SOCKET_SERVER, "STA Start");
     break;
 
     case WIFI_EVENT_STA_STOP:
-      vTaskDelete(xHandleTask_control_tcp_server_wifi);
-      //vTaskDelete(control_tcp_server_wifi_send_msg);
-      //vTaskDelete(control_tcp_server_wifi_recv_msg);
-      //xTimerStop(time_recv_msg, 0);
+      vTaskDelete(xHandleTask_wifi_sta_socket_server_control);
+      vTaskDelete(xHandleTask_wifi_sta_socket_server_send_msg);
+      vTaskDelete(xHandleTask_wifi_sta_socket_server_recv_msg);
+      xTimerStop(xHandleTimer_wifi_sta_socket_server_time_limit, 0);
 
       ESP_LOGI(TAG_WIFI_STA_SOCKET_SERVER, "STA Stop");
     break;
@@ -164,7 +172,7 @@ void wifi_sta_socket_server_event_handler_on_wifi(void* arg, esp_event_base_t ev
 void wifi_sta_socket_server_control_task(void *params){
   struct sockaddr_in addr_socket;
   struct sockaddr_in source_addr;
-  int listen_sock, sock, err;
+  int listen_sock, err;
   uint addr_len;
 
     // Adiciona o endereço em que o socket será criado
@@ -209,114 +217,96 @@ void wifi_sta_socket_server_control_task(void *params){
       ESP_LOGI(TAG_WIFI_STA_SOCKET_SERVER, "Socket aceito");
 
         // Inicia task de troca de dados e o contador de close conection
-      /*xTaskCreate(tcp_server_wifi_send_msg, "tcp-server-wifi-send_msg", 1500, &sock, 2, &control_tcp_server_wifi_send_msg);
-      xTaskCreate(tcp_server_wifi_recv_msg, "tcp-server-wifi-recv-msg", 2048, &sock, 2, &control_tcp_server_wifi_recv_msg);
-      time_recv_msg = xTimerCreate("time_recv_msg", xTime_close_conect, pdFALSE, NULL, tcp_server_wifi_recv_msg_time);
-      while(control_tcp_server_wifi_send_msg == NULL || control_tcp_server_wifi_recv_msg == NULL) vTaskDelay(pdMS_TO_TICKS(10));*/
+      xTaskCreate(wifi_sta_socket_server_send_msg_task, "wifi-sta-socket-server-send-msg-task", 1500, &sock, 2, &xHandleTask_wifi_sta_socket_server_send_msg);
+      xTaskCreate(wifi_sta_socket_server_recv_msg_task, "wifi-sta-socket-server-recv-msg-task", 2048, &sock, 2, &xHandleTask_wifi_sta_socket_server_recv_msg);
+      xHandleTimer_wifi_sta_socket_server_time_limit = xTimerCreate("wifi-sta-socket-server-time-limit", xTimer_wifi_sta_socket_server_time_limit, pdFALSE, NULL, wifi_sta_socket_server_time_limit);
+      while(xHandleTask_wifi_sta_socket_server_recv_msg == NULL || xHandleTask_wifi_sta_socket_server_recv_msg == NULL) vTaskDelay(pdMS_TO_TICKS(50));
 
         // Para a task durante a troca de mensages
-      vTaskSuspend(xHandleTask_control_tcp_server_wifi);
+      vTaskSuspend(xHandleTask_wifi_sta_socket_server_control);
 
         // Retorna as tasks de send e recv e para o timer
-      /*vTaskDelete(control_tcp_server_wifi_send_msg);
-      vTaskDelete(control_tcp_server_wifi_recv_msg);
-      xTimerStop(time_recv_msg, 0);*/
+      vTaskDelete(xHandleTask_wifi_sta_socket_server_send_msg);
+      vTaskDelete(xHandleTask_wifi_sta_socket_server_recv_msg);
+      xTimerStop(xHandleTimer_wifi_sta_socket_server_time_limit, 0);
 
         // Fecha a conexão
       if (sock != -1) {
         ESP_LOGI(TAG_WIFI_STA_SOCKET_SERVER, "Conexão fechada (closed)");
         close(sock);
       }
+
+      vTaskDelay(xDelay_Wifi_STA_Socket_Server_Control_Task);
     }
 
     close(sock);
     shutdown(sock, 0);
     ESP_LOGE(TAG_WIFI_STA_SOCKET_SERVER, "Socker desligado e reiniciando...");
+
+    vTaskDelay(xDelay_Wifi_STA_Socket_Server_Control_Task);
   }
 }
 
   // Task de recebimento de mensagens
 void wifi_sta_socket_server_send_msg_task(void *params){
-  /*int *sock = (int*)params;
-  bool send_data = false, new_conection = true;
-  char dt_string[128];
-  params_send_recv_t params_send_recv;
-
-    // Notifica que uma nova conecção foi estabelecida
-  xQueueSend(new_conection_queue, &new_conection, 0);
-
-  while(*sock != -1 && sock != NULL){
-
-    while(uxQueueMessagesWaiting(send_data_queue) > 0){
-      send_data = true;
-      xQueueReceive(send_data_queue, &params_send_recv, 0);
-    }
-
-    if(send_data){
-      send_data = false;
-      cnv_send(&params_send_recv, dt_string);
-      //ESP_LOGI("%s \n", dt_string);
-
-      int err = send(*sock, dt_string, strlen(dt_string), 0);
-      if (err < 0) {
-        ESP_LOGE(TAG_SERVER_WIFI, "Error occured during sending: errno %d", errno);
-        //break;
-      }
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(150));
-  }
-
-  vTaskDelete(NULL);*/
-
-  /*char *json_string = NULL;
   data_json_t json_data;
+  char *json_string;
+  int err;
 
   while(1){
-
-      // Envia dados para o Wifi
     while(uxQueueMessagesWaiting(queue_wifi_send) > 0){
+      xQueueReceive(queue_wifi_send, &json_data, 0);
       json_string = json_serialize(&json_data);
 
-      ESP_LOGI(TAG_WIFI_CONTROL, "JSON %s", json_string);
+      err = send(sock, json_string, strlen(json_string), 0);
+      if (err < 0) ESP_LOGE(TAG_WIFI_STA_SOCKET_SERVER, "Erro dorante o envio da mensagem: errno %d", errno);
+      else {
+        if(xTimerIsTimerActive(xHandleTimer_wifi_sta_socket_server_time_limit) == pdFALSE) xTimerStart(xHandleTimer_wifi_sta_socket_server_time_limit, 0);
+        else xTimerReset(xHandleTimer_wifi_sta_socket_server_time_limit, 0);
+      }
+
       json_string_free(json_string);
     }
 
-    vTaskDelay(xDelay_Wifi_Control_Task);
-  }*/
-
-
+    vTaskDelay(xDelay_Wifi_STA_Socket_Server_Send_msg_Task);
+  }
 }
 
   // Task de envio de mensagens
 void wifi_sta_socket_server_recv_msg_task(void *params){
-  /*int *sock = (int*)params, len;
-  char rx_buffer[512];
-  params_send_recv_t params_send_recv;
+  data_json_t json_data;
+  char json_string[512];
+  size_t json_string_len = sizeof(json_string);
+  int len;
 
   while(1){
-    if(xTimerIsTimerActive(time_recv_msg) == pdFALSE) xTimerStart(time_recv_msg, 0);
-    else xTimerReset(time_recv_msg, 0);
-
-    len = recv(*sock, rx_buffer, sizeof(rx_buffer) - 1, 0);
-
-      // Error occured during receiving
+    len = recv(sock, json_string, json_string_len, 0);
     if (len < 0) {
-      ESP_LOGE(TAG_SERVER_WIFI, "recv failed: errno %d", errno);
+      ESP_LOGE(TAG_WIFI_STA_SOCKET_SERVER, "Erro na recepção dos dados (recv failed): errno %d", errno);
       break;
 
       // Connection closed
     } else if (len == 0) {
-      ESP_LOGI(TAG_SERVER_WIFI, "Connection closed");
+      ESP_LOGI(TAG_WIFI_STA_SOCKET_SERVER, "Conexão fechada (Connection closed)");
       break;
 
       // Data received
     } else {
-      int ret = cnv_recv(&params_send_recv, rx_buffer, len);
-      if(ret == 0) xQueueSend(recv_data_queue, &params_send_recv, 0);
+      json_data = json_deserialize(json_string);
+      xQueueSend(queue_wifi_send, &json_data, 0);
+
+      if(xTimerIsTimerActive(xHandleTimer_wifi_sta_socket_server_time_limit) == pdFALSE) xTimerStart(xHandleTimer_wifi_sta_socket_server_time_limit, 0);
+      else xTimerReset(xHandleTimer_wifi_sta_socket_server_time_limit, 0);
     }
+
+    vTaskDelay(xDelay_Wifi_STA_Socket_Server_Recv_msg_Task);
   }
 
-  vTaskResume(control_tcp_server_wifi_task);*/
+  vTaskResume(xHandleTask_wifi_sta_socket_server_control);
+}
+
+  // Fecha Socket com limite de tempo
+void wifi_sta_socket_server_time_limit(TimerHandle_t xTimer){
+  vTaskResume(xHandleTask_wifi_sta_socket_server_control);
 }
 #endif

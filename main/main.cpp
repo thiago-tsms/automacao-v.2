@@ -26,10 +26,11 @@
 
 
   /* Task Delay */
-#define xDelay_Task_Start pdMS_TO_TICKS(50)
 #define xDelay_Central_Control_Task pdMS_TO_TICKS(100)
 #define xDelay_Lighting_Control_Task pdMS_TO_TICKS(100)
 #define xDelay_Wifi_Control_Task pdMS_TO_TICKS(120)
+
+#define xDelay_Task_Start pdMS_TO_TICKS(50)
 #define xDelay_Config_Wifi_Connection pdMS_TO_TICKS(100)
 
 
@@ -84,8 +85,6 @@ TimerHandle_t xHandleTimer_nvs_storage_led_states_rgb;
 #define QUEUE_SIZE_WIFI_RECV sizeof(data_json_t)
 #define QUEUESET_LENGHT_RECV (QUEUE_LENGHT_INTERRUPT_TIMER + QUEUE_LENGHT_WIFI_RECV + 0)
 QueueHandle_t queue_interrupt_timer;
-QueueHandle_t queue_wifi_send;
-QueueHandle_t queue_wifi_recv;
 QueueSetHandle_t queueSet_control_recv;
 
 
@@ -607,7 +606,7 @@ void lighting_control_task(void *params){
   while(true){
 
       // Recebe uma notificação
-    if(xTaskNotifyWait(0, 0xffffffff, &notify_data, 0) ==pdTRUE){
+    if(xTaskNotifyWait(0, 0xffffffff, &notify_data, 0) == pdTRUE){
 
       if(notify_data == NOTIFY_LED_ON_OFF || notify_data == NOTIFY_LED_ALL){
         status_led = lighting_states.led;

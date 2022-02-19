@@ -115,8 +115,9 @@ esp_err_t wifi_manager_GET_handler(httpd_req_t *req){
   // Wifi Manager POST (callback)
 esp_err_t wifi_manager_POST_handler(httpd_req_t *req){
   char*  buf;
-  size_t buf_len;
   char param[32];
+  size_t buf_len, param_lem = sizeof(param);
+  
 
   ESP_LOGI(TAG_WIFI_MANAGER, "POST - URL: %s", req->uri);
   ESP_LOGI(TAG_WIFI_MANAGER, "POST - Tamanho da requisição: %d", req->content_len);
@@ -130,32 +131,32 @@ esp_err_t wifi_manager_POST_handler(httpd_req_t *req){
     if(buf_len > 0) {
       ESP_LOGV(TAG_WIFI_MANAGER, "Dados: %s", buf);
 
-      if (httpd_query_key_value(buf, "ssid", param, sizeof(param)) == ESP_OK){
+      if (httpd_query_key_value(buf, "ssid", param, param_lem) == ESP_OK){
         strcpy(wifi_manager_server_ssid, param);
         ESP_LOGV(TAG_WIFI_MANAGER, "SSID: %s", param);
       }
 
-      if (httpd_query_key_value(buf, "password", param, sizeof(param)) == ESP_OK){
+      if (httpd_query_key_value(buf, "password", param, param_lem) == ESP_OK){
         strcpy(wifi_manager_server_password, param);
         ESP_LOGV(TAG_WIFI_MANAGER, "Password: %s", param);
       }
 
-      if (httpd_query_key_value(buf, "ip", param, sizeof(param)) == ESP_OK){
+      if (httpd_query_key_value(buf, "ip", param, param_lem) == ESP_OK){
         wifi_manager_server_ip = wifi_manager_convert_data(param);
         ESP_LOGV(TAG_WIFI_MANAGER, "IP: %s", param);
       }
 
-      if (httpd_query_key_value(buf, "gateway", param, sizeof(param)) == ESP_OK){
+      if (httpd_query_key_value(buf, "gateway", param, param_lem) == ESP_OK){
         wifi_manager_server_gateway = wifi_manager_convert_data(param);
         ESP_LOGV(TAG_WIFI_MANAGER, "Gateway: %s", param);
       }
 
-      if (httpd_query_key_value(buf, "netmask", param, sizeof(param)) == ESP_OK){
+      if (httpd_query_key_value(buf, "netmask", param, param_lem) == ESP_OK){
         wifi_manager_server_netmask = wifi_manager_convert_data(param);
         ESP_LOGV(TAG_WIFI_MANAGER, "Netmask: %s", param);
       }
 
-      if (httpd_query_key_value(buf, "port", param, sizeof(param)) == ESP_OK){
+      if (httpd_query_key_value(buf, "port", param, param_lem) == ESP_OK){
         wifi_manager_server_port = atoi(param);
         ESP_LOGV(TAG_WIFI_MANAGER, "Port: %s", param);
       }

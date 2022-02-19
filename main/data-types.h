@@ -7,6 +7,11 @@
 #define DEFAULT_LIGHTING_STATES {false, false, false, 1}
 #define DEFAULT_LED_STATES_RGB {{false, {1023, 0, 0}, {0, 0, 0}, {0, 0, 0}}, {false, {0, 0, 0}, {1023, 0, 0}, {0, 0, 0}}, {false, {0, 0, 0}, {0, 0, 0}, {1023, 0, 0}}, {false, {1023, 0, 0}, {1023, 0, 0}, {1023, 0, 0}}}
 
+  /* Parametros Queue */
+QueueHandle_t queue_wifi_send;
+QueueHandle_t queue_wifi_recv;
+
+
   /* Identificador dos botões precionados */
 typedef enum {
   BT_1,
