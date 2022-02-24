@@ -117,7 +117,7 @@ typedef enum {
   CONNECTION_STATUS_REQUEST = 1,
   CONNECTION_STATUS_OK = 2,
   REQUEST_ALL_STATES = 3,
-  DATA_TRANSACTION = 4,
+  DATA_TRANSACTION = 4
 } id_json_t;
 
   /* Dados para JSON */

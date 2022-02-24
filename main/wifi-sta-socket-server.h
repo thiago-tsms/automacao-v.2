@@ -296,7 +296,7 @@ void wifi_sta_socket_server_recv_msg_task(void *params){
       // Data received
     } else {
       json_data = json_deserialize(json_string);
-      xQueueSend(queue_wifi_send, &json_data, 0);
+      xQueueSend(queue_wifi_recv, &json_data, 0);
 
       if(xTimerIsTimerActive(xHandleTimer_wifi_sta_socket_server_time_limit) == pdFALSE) xTimerStart(xHandleTimer_wifi_sta_socket_server_time_limit, 0);
       else xTimerReset(xHandleTimer_wifi_sta_socket_server_time_limit, 0);

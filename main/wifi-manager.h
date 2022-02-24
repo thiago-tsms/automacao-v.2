@@ -58,8 +58,8 @@ void wifi_manager_init(){
   wifi_config.ap.authmode = WIFI_AUTH_OPEN;
   wifi_config.ap.beacon_interval = 500;
 
-  ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config));
-  ESP_ERROR_CHECK(esp_wifi_start());
+  esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config);
+  esp_wifi_start();
 
   ESP_LOGI(TAG_WIFI_MANAGER, "Wifi Manager Iniciado");
 }
@@ -129,36 +129,36 @@ esp_err_t wifi_manager_POST_handler(httpd_req_t *req){
 
     httpd_req_recv(req, buf, buf_len);
     if(buf_len > 0) {
-      ESP_LOGV(TAG_WIFI_MANAGER, "Dados: %s", buf);
+      ESP_LOGI(TAG_WIFI_MANAGER, "Dados: %s", buf);
 
       if (httpd_query_key_value(buf, "ssid", param, param_lem) == ESP_OK){
-        strcpy(wifi_manager_server_ssid, param);
         ESP_LOGV(TAG_WIFI_MANAGER, "SSID: %s", param);
+        strcpy(wifi_manager_server_ssid, param);
       }
 
       if (httpd_query_key_value(buf, "password", param, param_lem) == ESP_OK){
-        strcpy(wifi_manager_server_password, param);
         ESP_LOGV(TAG_WIFI_MANAGER, "Password: %s", param);
+        strcpy(wifi_manager_server_password, param);
       }
 
       if (httpd_query_key_value(buf, "ip", param, param_lem) == ESP_OK){
-        wifi_manager_server_ip = wifi_manager_convert_data(param);
         ESP_LOGV(TAG_WIFI_MANAGER, "IP: %s", param);
+        wifi_manager_server_ip = wifi_manager_convert_data(param);
       }
 
       if (httpd_query_key_value(buf, "gateway", param, param_lem) == ESP_OK){
-        wifi_manager_server_gateway = wifi_manager_convert_data(param);
         ESP_LOGV(TAG_WIFI_MANAGER, "Gateway: %s", param);
+        wifi_manager_server_gateway = wifi_manager_convert_data(param);
       }
 
       if (httpd_query_key_value(buf, "netmask", param, param_lem) == ESP_OK){
-        wifi_manager_server_netmask = wifi_manager_convert_data(param);
         ESP_LOGV(TAG_WIFI_MANAGER, "Netmask: %s", param);
+        wifi_manager_server_netmask = wifi_manager_convert_data(param);
       }
 
       if (httpd_query_key_value(buf, "port", param, param_lem) == ESP_OK){
-        wifi_manager_server_port = atoi(param);
         ESP_LOGV(TAG_WIFI_MANAGER, "Port: %s", param);
+        wifi_manager_server_port = atoi(param);
       }
 
       free(buf);

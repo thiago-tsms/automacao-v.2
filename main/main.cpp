@@ -223,9 +223,9 @@ void app_main(){
 
 
     // Inicialização Wifi
-  //wifi_sta_socket_server_login(wifi_ssid, wifi_password);
-  //wifi_sta_socket_server_address(&wifi_ip, &wifi_gateway, &wifi_netmask, &wifi_port);
-  //wifi_sta_socket_server_start();
+  wifi_sta_socket_server_login(wifi_ssid, wifi_password);
+  wifi_sta_socket_server_address(&wifi_ip, &wifi_gateway, &wifi_netmask, &wifi_port);
+  wifi_sta_socket_server_start();
 
 
   ESP_LOGI(TAG_MAIN, "Inicialização Finalizada");
@@ -357,19 +357,19 @@ void config_wifi_connection(){
       if(gpio_get_level(BT1) && !gpio_get_level(BT2) && gpio_get_level(BT3)){
         ESP_LOGI(TAG_MAIN, "Iniciando modo de configuração de rede");
 
-        //wifi_manager_init();
-        //wifi_manager_start();
+        wifi_manager_init();
+        wifi_manager_start();
 
         while(1){
           vTaskDelay(xDelay_Config_Wifi_Connection);
 
-          /*if(wifi_manager_get_data_available()){
+          if(wifi_manager_get_data_available()){
             wifi_manager_get_data(wifi_ssid, wifi_password, &wifi_ip, &wifi_gateway, &wifi_netmask, &wifi_port);
             nvs_storage_config_wifi_connection();
-          }*/
+          }
         }
 
-        //wifi_manager_stop();
+        wifi_manager_stop();
     }
   }
 }
@@ -380,8 +380,8 @@ void nvs_storage_config_wifi_connection(){
   bool success = true;
 
   if(nvs_open(NVS_PARTITION_NAME_WIFI, NVS_READWRITE, &nvs_partition) == ESP_OK){
-    if(nvs_set_str(nvs_partition, NVS_PARTITION_NAME_WIFI, wifi_ssid) != ESP_OK) success = false;
-    if(nvs_set_str(nvs_partition, NVS_KEY_WIFI_SSID, wifi_password) != ESP_OK) success = false;
+    if(nvs_set_str(nvs_partition, NVS_KEY_WIFI_SSID, wifi_ssid) != ESP_OK) success = false;
+    if(nvs_set_str(nvs_partition, NVS_KEY_WIFI_PASSWORD, wifi_password) != ESP_OK) success = false;
     if(nvs_set_u32(nvs_partition, NVS_KEY_WIFI_IP, wifi_ip) != ESP_OK) success = false;
     if(nvs_set_u32(nvs_partition, NVS_KEY_WIFI_GATEWAY, wifi_gateway) != ESP_OK) success = false;
     if(nvs_set_u32(nvs_partition, NVS_KEY_WIFI_NETMASK, wifi_netmask) != ESP_OK) success = false;

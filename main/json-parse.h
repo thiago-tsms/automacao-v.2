@@ -147,7 +147,10 @@ data_json_t json_deserialize(char *json_string){
 
     switch(atoi(buffer)){
       case 0: data.id = id_json_t::NO_ACTION; break;
-      case 1: data.id = id_json_t::DATA_TRANSACTION; break;
+      case 1: data.id = id_json_t::CONNECTION_STATUS_REQUEST; break;
+      case 2: data.id = id_json_t::CONNECTION_STATUS_OK; break;
+      case 3: data.id = id_json_t::REQUEST_ALL_STATES; break;
+      case 4: data.id = id_json_t::DATA_TRANSACTION; break;
     }
 
     data.mask += mask_json_t::ID; 
