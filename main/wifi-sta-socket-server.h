@@ -20,7 +20,7 @@
 
 
   /* Parametros Software Timer */
-#define xTimer_wifi_sta_socket_server_time_limit pdMS_TO_TICKS(15000)
+#define xTimer_wifi_sta_socket_server_time_limit pdMS_TO_TICKS(5000)
 TimerHandle_t xHandleTimer_wifi_sta_socket_server_time_limit;
 
 
@@ -152,6 +152,7 @@ void wifi_sta_socket_server_event_handler_on_wifi(void* arg, esp_event_base_t ev
       vTaskDelete(xHandleTask_wifi_sta_socket_server_send_msg);
       vTaskDelete(xHandleTask_wifi_sta_socket_server_recv_msg);
       xTimerStop(xHandleTimer_wifi_sta_socket_server_time_limit, 0);
+      xTaskNotify(xHandleTask_central_control, NOTIFY_WIFI_DISCONNECT, eSetBits);
 
       ESP_LOGI(TAG_WIFI_STA_SOCKET_SERVER, "STA Stop");
     break;
@@ -221,6 +222,7 @@ void wifi_sta_socket_server_control_task(void *params){
       xTaskCreate(wifi_sta_socket_server_recv_msg_task, "wifi-sta-socket-server-recv-msg-task", 2048, &sock, 2, &xHandleTask_wifi_sta_socket_server_recv_msg);
       xHandleTimer_wifi_sta_socket_server_time_limit = xTimerCreate("wifi-sta-socket-server-time-limit", xTimer_wifi_sta_socket_server_time_limit, pdFALSE, NULL, wifi_sta_socket_server_time_limit);
       while(xHandleTask_wifi_sta_socket_server_recv_msg == NULL || xHandleTask_wifi_sta_socket_server_recv_msg == NULL) vTaskDelay(pdMS_TO_TICKS(50));
+      xTaskNotify(xHandleTask_central_control, NOTIFY_WIFI_CONECT, eSetBits);
 
         // Para a task durante a troca de mensages
       vTaskSuspend(xHandleTask_wifi_sta_socket_server_control);
@@ -229,6 +231,7 @@ void wifi_sta_socket_server_control_task(void *params){
       vTaskDelete(xHandleTask_wifi_sta_socket_server_send_msg);
       vTaskDelete(xHandleTask_wifi_sta_socket_server_recv_msg);
       xTimerStop(xHandleTimer_wifi_sta_socket_server_time_limit, 0);
+      xTaskNotify(xHandleTask_central_control, NOTIFY_WIFI_DISCONNECT, eSetBits);
 
         // Fecha a conexão
       if (sock != -1) {

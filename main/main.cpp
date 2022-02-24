@@ -64,11 +64,6 @@ float pwm_phase[3] = {0, 0, 0};
 #define TIME_INTERRUPT 90 //(ms)
 
 
-  /* Parametros Task */
-TaskHandle_t xHandleTask_central_control;
-TaskHandle_t xHandleTask_lighting_control;
-
-
   /* Parametros Software Timer */
 #define xTimer_nvs_storage_lighting_states pdMS_TO_TICKS(10000)
 #define xTimer_nvs_nvs_storage_led_states_rgb pdMS_TO_TICKS(10000)
@@ -130,6 +125,7 @@ uint32_t wifi_ip;
 uint32_t wifi_gateway;
 uint32_t wifi_netmask;
 uint16_t wifi_port;
+bool wifi_status = false;
 
   /* Parâmetros Configuração de conexão */
 #define TIME_TO_SEQUENCE pdMS_TO_TICKS(4000)
@@ -557,6 +553,8 @@ void central_control_task(void *params){
   action_interrupt_timer_t btn_action;
   data_json_t data_json;
   actions_enum action;
+
+  uint32_t notify_data;
   
 
     // Atializa estados iniciais
@@ -564,6 +562,11 @@ void central_control_task(void *params){
 
   TickType_t reference_time_delay;
   while(true){
+
+    if(xTaskNotifyWait(0, 0xffffffff, &notify_data, 0) == pdTRUE){
+      if(notify_data == NOTIFY_WIFI_CONECT) wifi_status = true;
+      else if(notify_data == NOTIFY_WIFI_DISCONNECT) wifi_status = false;
+    }
 
       // Efetua a leitura da queue
     while((set_recv = xQueueSelectFromSet(queueSet_control_recv, 0)) != NULL){
@@ -690,7 +693,31 @@ actions_enum select_button_action(action_interrupt_timer_t *btn_action){
 
   // Interpreta ações do WIFI
 actions_enum select_wifi_action(data_json_t *data_json){
-  return actions_enum::NOTHING;
+  switch(data_json->id){   
+    case id_json_t::CONNECTION_STATUS_REQUEST: return actions_enum::WIFI_CONNECTION_STATUS_OK;
+    case id_json_t::REQUEST_ALL_STATES: return actions_enum::WIFI_REQUEST_ALL_STATES;
+    case id_json_t::DATA_TRANSACTION:
+      switch(data_json->mask){
+        case mask_json_t::L1: return actions_enum::WIFI_L1;
+        case mask_json_t::L2: return actions_enum::WIFI_L2;
+        case mask_json_t::LED: return actions_enum::WIFI_LED;
+        case mask_json_t::MODE: return actions_enum::WIFI_MODO;
+        case mask_json_t::FX: return actions_enum::WIFI_FX;
+        case mask_json_t::AMP_R: return actions_enum::WIFI_AMP_R;
+        case mask_json_t::PER_R: return actions_enum::WIFI_PER_R;
+        case mask_json_t::DES_R: return actions_enum::WIFI_DES_R;
+        case mask_json_t::AMP_G: return actions_enum::WIFI_AMP_G;
+        case mask_json_t::PER_G: return actions_enum::WIFI_PER_G;
+        case mask_json_t::DES_G: return actions_enum::WIFI_DES_G;
+        case mask_json_t::AMP_B: return actions_enum::WIFI_AMP_B;
+        case mask_json_t::PER_B: return actions_enum::WIFI_PER_B;
+        case mask_json_t::DES_B: return actions_enum::WIFI_DES_B;
+        case mask_json_t::RGB: return actions_enum::WIFI_RGB;
+        case mask_json_t::ALL: return actions_enum::UPDATE_ALL_STATES;
+        default: return actions_enum::NOTHING;
+      }
+    default: return actions_enum::NOTHING;
+  }
 }
 
 
@@ -699,31 +726,31 @@ actions_enum select_wifi_action(data_json_t *data_json){
   // Atualiza os estados com base nas ações (Iluminação e RGB)
 void update_states(actions_enum action, data_json_t *data_json){
 
-    // L1
+    // L1 (ISR)
   if(action == actions_enum::ISR_L1){
     if(xSemaphoreTake(semaphore_lighting_states, xTicksToWait_semaphore_lighting_states) == pdPASS)
       lighting_states.l1 = !lighting_states.l1;
     xSemaphoreGive(semaphore_lighting_states);
-
     ESP_LOGV(TAG_LD_CONTROL, "Modifica estado de L1 para: %d", lighting_states.l1);
   
-    // L2
+
+    // L2 (ISR)
   } else if(action == actions_enum::ISR_L2){
     if(xSemaphoreTake(semaphore_lighting_states, xTicksToWait_semaphore_lighting_states) == pdPASS)
       lighting_states.l2 = !lighting_states.l2;
     xSemaphoreGive(semaphore_lighting_states);
-
     ESP_LOGV(TAG_LD_CONTROL, "Modifica estado de L2 para: %d", lighting_states.l2);
   
-    // LED
+
+    // LED (ISR)
   } else if(action == actions_enum::ISR_LED){
     if(xSemaphoreTake(semaphore_lighting_states, xTicksToWait_semaphore_lighting_states) == pdPASS)
       lighting_states.led = !lighting_states.led;
     xSemaphoreGive(semaphore_lighting_states);
-
     ESP_LOGV(TAG_LD_CONTROL, "Modifica estado de LED para: %d", lighting_states.led);
   
-    //LED - MODE UP
+
+    //LED - MODE UP (ISR)
   } else if(action == actions_enum::ISR_MODO_UP){
     if(xSemaphoreTake(semaphore_lighting_states, xTicksToWait_semaphore_lighting_states) == pdPASS){
       lighting_states.mode++;
@@ -733,10 +760,10 @@ void update_states(actions_enum action, data_json_t *data_json){
       }
     }
     xSemaphoreGive(semaphore_lighting_states);
-
     ESP_LOGV(TAG_LD_CONTROL, "Modifica MODE para: %d", lighting_states.mode);
   
-    //LED - MODE DOWN
+
+    //LED - MODE DOWN (ISR)
   } else if(action == actions_enum::ISR_MODO_DOWN){
     if(xSemaphoreTake(semaphore_lighting_states, xTicksToWait_semaphore_lighting_states) == pdPASS){
       lighting_states.mode--;
@@ -746,8 +773,138 @@ void update_states(actions_enum action, data_json_t *data_json){
       }
     }
     xSemaphoreGive(semaphore_lighting_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica MODE para: %d", lighting_states.l1);
+  
 
+    // L1 (WIFI)
+  } else if(action == actions_enum::WIFI_L1){
+    if(xSemaphoreTake(semaphore_lighting_states, xTicksToWait_semaphore_lighting_states) == pdPASS){
+      lighting_states.l1 = data_json->ls.l1;
+    }
+    xSemaphoreGive(semaphore_lighting_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica L1 para: %d", lighting_states.l2);
+
+
+    // L2 (WIFI)
+  } else if(action == actions_enum::WIFI_L2){
+    if(xSemaphoreTake(semaphore_lighting_states, xTicksToWait_semaphore_lighting_states) == pdPASS){
+      lighting_states.l2 = data_json->ls.l2;
+    }
+    xSemaphoreGive(semaphore_lighting_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica L2 para: %d", lighting_states.led);
+
+
+    // LED (WIFI)
+  } else if(action == actions_enum::WIFI_LED){
+    if(xSemaphoreTake(semaphore_lighting_states, xTicksToWait_semaphore_lighting_states) == pdPASS){
+      lighting_states.led = data_json->ls.led;
+    }
+    xSemaphoreGive(semaphore_lighting_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica LED para: %d", lighting_states.mode);
+
+
+    //LED - MODE (WIFI)
+  } else if(action == actions_enum::WIFI_MODO){
+    if(xSemaphoreTake(semaphore_lighting_states, xTicksToWait_semaphore_lighting_states) == pdPASS){
+      if(data_json->ls.mode < 4)
+        lighting_states.mode = data_json->ls.mode;
+    }
+    xSemaphoreGive(semaphore_lighting_states);
     ESP_LOGV(TAG_LD_CONTROL, "Modifica MODE para: %d", lighting_states.mode);
+  
+  
+    // FX (WIFI)
+  } else if(action == actions_enum::WIFI_FX){
+    if(xSemaphoreTake(semaphore_led_states, xTicksToWait_semaphore_led_states) == pdPASS){
+      led_states_rgb[lighting_states.mode].fx = data_json->rgb.fx;
+    }
+    xSemaphoreGive(semaphore_led_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica FX para: %d", led_states_rgb[lighting_states.mode].fx);
+
+
+    // AMP R
+  } else if(action == actions_enum::WIFI_AMP_R){
+    if(xSemaphoreTake(semaphore_led_states, xTicksToWait_semaphore_led_states) == pdPASS){
+      if(data_json->rgb.r.amp < 1024)
+        led_states_rgb[lighting_states.mode].r.amp = data_json->rgb.r.amp;
+    }
+    xSemaphoreGive(semaphore_led_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica AMP R para: %d", led_states_rgb[lighting_states.mode].r.amp);
+
+
+    // PER R (WIFI)
+  } else if(action == actions_enum::WIFI_PER_R){
+    if(xSemaphoreTake(semaphore_led_states, xTicksToWait_semaphore_led_states) == pdPASS){
+      led_states_rgb[lighting_states.mode].r.per = data_json->rgb.r.per;
+    }
+    xSemaphoreGive(semaphore_led_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica PER R para: %d", led_states_rgb[lighting_states.mode].r.per);
+
+
+    // DES R (WIFI)
+  } else if(action == actions_enum::WIFI_DES_R){
+    if(xSemaphoreTake(semaphore_led_states, xTicksToWait_semaphore_led_states) == pdPASS){
+      led_states_rgb[lighting_states.mode].r.des = data_json->rgb.r.des;
+    }
+    xSemaphoreGive(semaphore_led_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica DES R para: %d", led_states_rgb[lighting_states.mode].r.des);
+
+
+    // AMP G (WIFI)
+  } else if(action == actions_enum::WIFI_AMP_G){
+    if(xSemaphoreTake(semaphore_led_states, xTicksToWait_semaphore_led_states) == pdPASS){
+      if(data_json->rgb.g.amp < 1024)
+        led_states_rgb[lighting_states.mode].g.amp = data_json->rgb.g.amp;
+      
+    }
+    xSemaphoreGive(semaphore_led_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica AMP G para: %d", led_states_rgb[lighting_states.mode].g.amp);
+
+
+    // PER G (WIFI)
+  } else if(action == actions_enum::WIFI_PER_G){
+    if(xSemaphoreTake(semaphore_led_states, xTicksToWait_semaphore_led_states) == pdPASS){
+      led_states_rgb[lighting_states.mode].g.per = data_json->rgb.g.per;
+    }
+    xSemaphoreGive(semaphore_led_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica PER G para: %d", led_states_rgb[lighting_states.mode].g.per);
+
+
+    // DES G (WIFI)
+  } else if(action == actions_enum::WIFI_DES_G){
+    if(xSemaphoreTake(semaphore_led_states, xTicksToWait_semaphore_led_states) == pdPASS){
+      led_states_rgb[lighting_states.mode].g.des = data_json->rgb.g.des;
+    }
+    xSemaphoreGive(semaphore_led_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica DES G para: %d", led_states_rgb[lighting_states.mode].g.des);
+
+
+    // AMP B (WIFI)
+  } else if(action == actions_enum::WIFI_AMP_B){
+    if(xSemaphoreTake(semaphore_led_states, xTicksToWait_semaphore_led_states) == pdPASS){
+      if(data_json->rgb.b.amp < 1024)
+        led_states_rgb[lighting_states.mode].b.amp = data_json->rgb.b.amp;
+    }
+    xSemaphoreGive(semaphore_led_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica AMP B para: %d", led_states_rgb[lighting_states.mode].b.amp);
+
+
+    // PER B (WIFI)
+  } else if(action == actions_enum::WIFI_PER_B){
+    if(xSemaphoreTake(semaphore_led_states, xTicksToWait_semaphore_led_states) == pdPASS){
+      led_states_rgb[lighting_states.mode].b.per = data_json->rgb.b.per;
+    }
+    xSemaphoreGive(semaphore_led_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica PER B para: %d", led_states_rgb[lighting_states.mode].b.per);
+
+
+    // DES B (WIFI)
+  } else if(action == actions_enum::WIFI_DES_B){
+    if(xSemaphoreTake(semaphore_led_states, xTicksToWait_semaphore_led_states) == pdPASS){
+      led_states_rgb[lighting_states.mode].b.des = data_json->rgb.b.des;
+    }
+    xSemaphoreGive(semaphore_led_states);
+    ESP_LOGV(TAG_LD_CONTROL, "Modifica DES B para: %d", led_states_rgb[lighting_states.mode].b.des);
   }
 }
 
@@ -755,25 +912,34 @@ void update_states(actions_enum action, data_json_t *data_json){
 void update_lighting(actions_enum action){
 
     // L1 - ON/OFF
-  if(action == actions_enum::ISR_L1){
+  if((action == actions_enum::ISR_L1) || (action == actions_enum::WIFI_L1)){
     gpio_set_level(LD1, lighting_states.l1);
 
+
     // L2 - ON/OFF
-  } else if(action == actions_enum::ISR_L2){
+  } else if((action == actions_enum::ISR_L2) || (action == actions_enum::WIFI_L2)){
     gpio_set_level(LD2, !lighting_states.l2);
 
+
     // LED - ON/OFF
-  } else if(action == actions_enum::ISR_LED){
+  } else if((action == actions_enum::ISR_LED) || (action == actions_enum::WIFI_LED)){
 
       //Notifica alteração do estado led
     xTaskNotify(xHandleTask_lighting_control, NOTIFY_LED_ON_OFF, eSetBits);
 
-    // MODE - ON/OFF
-  } else if(action == actions_enum::ISR_MODO_UP || action == actions_enum::ISR_MODO_DOWN){
 
+    // MODE, FX, AMP, PER, DES
+  } else if(
+            (action == actions_enum::ISR_MODO_UP) || (action == actions_enum::ISR_MODO_DOWN) || (action == actions_enum::WIFI_MODO) ||
+            (action == actions_enum::WIFI_AMP_R) || (action == actions_enum::WIFI_PER_R) || (action == actions_enum::WIFI_DES_R) ||
+            (action == actions_enum::WIFI_AMP_G) || (action == actions_enum::WIFI_PER_G) || (action == actions_enum::WIFI_DES_G) ||
+            (action == actions_enum::WIFI_AMP_B) || (action == actions_enum::WIFI_PER_B) || (action == actions_enum::WIFI_DES_B)
+          ){
       //Notifica alteração do modoled
     xTaskNotify(xHandleTask_lighting_control, NOTIFY_LED_STATE, eSetBits);
   
+
+    // Todos
   } else if(action == actions_enum::UPDATE_ALL_STATES){
     gpio_set_level(LD1, lighting_states.l1);
     gpio_set_level(LD2, !lighting_states.l2);
@@ -788,9 +954,23 @@ void update_storage_nvs(actions_enum action){
             (action == actions_enum::ISR_L2) ||
             (action == actions_enum::ISR_LED) ||
             (action == actions_enum::ISR_MODO_UP) ||
-            (action == actions_enum::ISR_MODO_DOWN);
-  
-  //bool rgb = (action == actions_enum::WIFI_L1);
+            (action == actions_enum::ISR_MODO_DOWN) ||
+            (action == actions_enum::WIFI_L1) ||
+            (action == actions_enum::WIFI_L2) ||
+            (action == actions_enum::WIFI_LED) ||
+            (action == actions_enum::WIFI_MODO);
+
+  bool rgb =  (action == actions_enum::WIFI_FX) ||
+              (action == actions_enum::WIFI_AMP_R) ||
+              (action == actions_enum::WIFI_PER_R) ||
+              (action == actions_enum::WIFI_DES_R) ||
+              (action == actions_enum::WIFI_AMP_G) ||
+              (action == actions_enum::WIFI_PER_G) ||
+              (action == actions_enum::WIFI_DES_G) ||
+              (action == actions_enum::WIFI_AMP_B) ||
+              (action == actions_enum::WIFI_PER_B) ||
+              (action == actions_enum::WIFI_DES_B);
+
 
     // Atualiza estados de Iluminação
   if(ls){
@@ -803,7 +983,7 @@ void update_storage_nvs(actions_enum action){
   }
 
     // Atualiza estador do RGB
-  if(action == actions_enum::WIFI_FX){
+  if(rgb){
     ESP_LOGV(TAG_LD_CONTROL, "Contador iniciado para salvamento de estados");
   }
 }
@@ -812,50 +992,87 @@ void update_storage_nvs(actions_enum action){
 void update_wifi(actions_enum action){
   data_json_t json_data;
 
-    // LD 1 - ON/OFF
-  if(action == actions_enum::ISR_L1) {
-    json_data.id = id_json_t::DATA;
-    json_data.mask = mask_json_t::L1;
-    json_data.ls.l1 = lighting_states.l1;   
+  if(!wifi_status) return;
 
-    //xQueueSendToBack(queue_wifi_send, &json_data, 0);
+    // Status da conexão (WIFI)
+  if(action == actions_enum::WIFI_CONNECTION_STATUS_OK){
+    json_data.mask = (mask_json_t::ID);
+    json_data.id = id_json_t::CONNECTION_STATUS_OK;
+
+    xQueueSendToBack(queue_wifi_send, &json_data, 0);
+  
+
+    // LD 1 - ON/OFF
+  } else if((action == actions_enum::ISR_L1) || (action == actions_enum::WIFI_L1)) {
+    json_data.mask = (mask_json_t::ID) + (mask_json_t::L1);
+    json_data.id = id_json_t::DATA_TRANSACTION;
+    json_data.ls.l1 = lighting_states.l1;
+
+    xQueueSendToBack(queue_wifi_send, &json_data, 0);
 
 
     // LD 2 - ON/OFF
-  } else if(action == actions_enum::ISR_L2){
-    json_data.id = id_json_t::DATA;
-    json_data.mask = mask_json_t::L2;
+  } else if((action == actions_enum::ISR_L2) || (action == actions_enum::WIFI_L2)){
+    json_data.mask = (mask_json_t::ID) + (mask_json_t::L2);
+    json_data.id = id_json_t::DATA_TRANSACTION;
     json_data.ls.l2 = lighting_states.l2;
 
-    //xQueueSendToBack(queue_wifi_send, &json_data, 0);
+    xQueueSendToBack(queue_wifi_send, &json_data, 0);
 
 
     // LD 3 (LED) - ON/OFF
-  } else if(action == actions_enum::ISR_LED){
-    json_data.id = id_json_t::DATA;
-    json_data.mask = mask_json_t::LED;
+  } else if((action == actions_enum::ISR_LED) || (action == actions_enum::WIFI_LED)){
+    json_data.mask = (mask_json_t::ID) + (mask_json_t::LED);
+    json_data.id = id_json_t::DATA_TRANSACTION;
     json_data.ls.led = lighting_states.led;
 
-    //xQueueSendToBack(queue_wifi_send, &json_data, 0);
+    xQueueSendToBack(queue_wifi_send, &json_data, 0);
 
 
     // MODO
-  } else if(action == actions_enum::ISR_MODO_UP || action == actions_enum::ISR_MODO_DOWN){
-    json_data.id = id_json_t::DATA;
-    json_data.mask = (mask_json_t::MODE) /*+ (mask_json_t::FX)*/;
+  } else if((action == actions_enum::ISR_MODO_UP) || (action == actions_enum::ISR_MODO_DOWN) || (action == actions_enum::WIFI_MODO)){
+    json_data.mask =  (mask_json_t::RGB);
+    json_data.id = id_json_t::DATA_TRANSACTION;
     json_data.ls.mode = lighting_states.mode;
-    //json_data.rgb.fx = led_states_rgb[json_data.ls.mode].fx;
+    json_data.rgb.fx = led_states_rgb[json_data.ls.mode].fx;
+    json_data.rgb.r.amp = led_states_rgb[json_data.ls.mode].r.amp;
+    json_data.rgb.g.amp = led_states_rgb[json_data.ls.mode].g.amp;
+    json_data.rgb.b.amp = led_states_rgb[json_data.ls.mode].b.amp;
+    json_data.rgb.r.per = led_states_rgb[json_data.ls.mode].r.per;
+    json_data.rgb.g.per = led_states_rgb[json_data.ls.mode].g.per;
+    json_data.rgb.b.per = led_states_rgb[json_data.ls.mode].b.per;
+    json_data.rgb.r.des = led_states_rgb[json_data.ls.mode].r.des;
+    json_data.rgb.g.des = led_states_rgb[json_data.ls.mode].g.des;
+    json_data.rgb.b.des = led_states_rgb[json_data.ls.mode].b.des;
+
+    xQueueSendToBack(queue_wifi_send, &json_data, 0);
+
+
+    // WIFI - Solicita todos os States
+  } else if(action == actions_enum::WIFI_REQUEST_ALL_STATES){
+    json_data.mask =  (mask_json_t::ALL);
+    json_data.id = id_json_t::DATA_TRANSACTION;
+    json_data.ls.l1 = lighting_states.l1;
+    json_data.ls.l2 = lighting_states.l2;
+    json_data.ls.led = lighting_states.led;
+    json_data.ls.mode = lighting_states.mode;
+    json_data.rgb.fx = led_states_rgb[json_data.ls.mode].fx;
+    json_data.rgb.r.amp = led_states_rgb[json_data.ls.mode].r.amp;
+    json_data.rgb.g.amp = led_states_rgb[json_data.ls.mode].g.amp;
+    json_data.rgb.b.amp = led_states_rgb[json_data.ls.mode].b.amp;
+    json_data.rgb.r.per = led_states_rgb[json_data.ls.mode].r.per;
+    json_data.rgb.g.per = led_states_rgb[json_data.ls.mode].g.per;
+    json_data.rgb.b.per = led_states_rgb[json_data.ls.mode].b.per;
+    json_data.rgb.r.des = led_states_rgb[json_data.ls.mode].r.des;
+    json_data.rgb.g.des = led_states_rgb[json_data.ls.mode].g.des;
+    json_data.rgb.b.des = led_states_rgb[json_data.ls.mode].b.des;
+
+    xQueueSendToBack(queue_wifi_send, &json_data, 0);
   
   
     // Nenhuma ação
   } else {
     ESP_LOGV(TAG_LD_CONTROL, "Nenhuma ação válida");
-  }
-
-  if(action != actions_enum::NOTHING){
-    char *json_string = json_serialize(&json_data);
-    printf("%s\n", json_string);
-    json_string_free(json_string);
   }
 }
 

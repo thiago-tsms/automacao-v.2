@@ -3,9 +3,24 @@
 
 #include <stdlib.h>
 
+#include "freertos/task.h"
+#include "freertos/queue.h"
+
+
   // Inicialização de variáveis
 #define DEFAULT_LIGHTING_STATES {false, false, false, 1}
 #define DEFAULT_LED_STATES_RGB {{false, {1023, 0, 0}, {0, 0, 0}, {0, 0, 0}}, {false, {0, 0, 0}, {1023, 0, 0}, {0, 0, 0}}, {false, {0, 0, 0}, {0, 0, 0}, {1023, 0, 0}}, {false, {1023, 0, 0}, {1023, 0, 0}, {1023, 0, 0}}}
+
+
+  /* Parametros Notify */
+#define NOTIFY_WIFI_CONECT 0x4
+#define NOTIFY_WIFI_DISCONNECT 0x5
+
+
+  /* Parametros Task */
+TaskHandle_t xHandleTask_central_control;
+TaskHandle_t xHandleTask_lighting_control;
+
 
   /* Parametros Queue */
 QueueHandle_t queue_wifi_send;
@@ -47,7 +62,10 @@ typedef enum {
   WIFI_DES_G,
   WIFI_AMP_B,
   WIFI_PER_B,
-  WIFI_DES_B
+  WIFI_DES_B,
+  WIFI_RGB,
+  WIFI_CONNECTION_STATUS_OK,
+  WIFI_REQUEST_ALL_STATES
 } actions_enum;
 
   /* Dados queue Iluminação */
@@ -73,6 +91,7 @@ typedef struct {
 
   /* Mascara para JSON */
 typedef enum {
+  CLEAR = 0b0000000000000000,
   ID    = 0b0000000000000001,
   L1    = 0b0000000000000010,
   L2    = 0b0000000000000100,
@@ -87,13 +106,18 @@ typedef enum {
   DES_G = 0b0000100000000000,
   AMP_B = 0b0001000000000000,
   PER_B = 0b0010000000000000,
-  DES_B = 0b0100000000000000
+  DES_B = 0b0100000000000000,
+  RGB   = 0b0111111111110000,
+  ALL   = 0b0111111111111111,
 } mask_json_t;
 
 /* ID ações WIFI */
 typedef enum {
   NO_ACTION = 0,
-  DATA = 1
+  CONNECTION_STATUS_REQUEST = 1,
+  CONNECTION_STATUS_OK = 2,
+  REQUEST_ALL_STATES = 3,
+  DATA_TRANSACTION = 4,
 } id_json_t;
 
   /* Dados para JSON */
