@@ -16,11 +16,11 @@
   /* Task Delay */
 #define xDelay_Wifi_STA_Socket_Server_Control_Task pdMS_TO_TICKS(250)
 #define xDelay_Wifi_STA_Socket_Server_Send_msg_Task pdMS_TO_TICKS(200)
-#define xDelay_Wifi_STA_Socket_Server_Recv_msg_Task pdMS_TO_TICKS(200)
+#define xDelay_Wifi_STA_Socket_Server_Recv_msg_Task pdMS_TO_TICKS(150)
 
 
   /* Parametros Software Timer */
-#define xTimer_wifi_sta_socket_server_time_limit pdMS_TO_TICKS(5000)
+#define xTimer_wifi_sta_socket_server_time_limit pdMS_TO_TICKS(4000)
 TimerHandle_t xHandleTimer_wifi_sta_socket_server_time_limit;
 
 

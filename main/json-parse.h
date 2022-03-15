@@ -140,7 +140,7 @@ data_json_t json_deserialize(char *json_string){
   char *buffer;
 
   data.mask = 0;
-  
+
     // ID
   if(cJSON_GetObjectItem(json_object, JSON_ID)) {
 		buffer = cJSON_GetObjectItem(json_object, JSON_ID)->valuestring;

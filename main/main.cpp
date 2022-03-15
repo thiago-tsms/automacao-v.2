@@ -299,6 +299,7 @@ void nvs_load_data(){
 
     ESP_LOGV(TAG_MAIN, "Carregando dados RGB");
 
+    nvs_size = sizeof(led_states_rgb_t);
     nvs_get_blob(nvs_partition, NVS_KEY_RGB_0, &(led_states_rgb[0]), &nvs_size);
     nvs_get_blob(nvs_partition, NVS_KEY_RGB_1, &(led_states_rgb[1]), &nvs_size);
     nvs_get_blob(nvs_partition, NVS_KEY_RGB_2, &(led_states_rgb[2]), &nvs_size);
@@ -495,7 +496,6 @@ void nvs_storage_led_states_rgb(TimerHandle_t xTimer){
   size_t nvs_size;
   esp_err_t err;
   led_states_rgb_t led_states;
-  bool compare_ok;
 
   ESP_LOGV(TAG_LD_CONTROL, "Salvando parâmetros RGB na memória (NVS)");
 
@@ -504,38 +504,26 @@ void nvs_storage_led_states_rgb(TimerHandle_t xTimer){
 
       // RGB 0
     err = nvs_get_blob(nvs_partition, NVS_KEY_RGB_0, &led_states, &nvs_size);
-    if(err == ESP_OK){
-      compare_ok = compare_storage_rgb(&led_states, &(led_states_rgb[0]));
-      if(compare_ok)
-        if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_0, &(led_states_rgb[0]), sizeof(led_states_rgb_t)) == ESP_OK) 
-          nvs_commit(nvs_partition);
+    if(err == ESP_ERR_NVS_NOT_FOUND || compare_storage_rgb(&led_states, &(led_states_rgb[0]))){
+      if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_0, &(led_states_rgb[0]), sizeof(led_states_rgb_t)) == ESP_OK) nvs_commit(nvs_partition);
     }
 
       // RGB 1
     err = nvs_get_blob(nvs_partition, NVS_KEY_RGB_1, &led_states, &nvs_size);
-    if(err == ESP_OK){
-      compare_ok = compare_storage_rgb(&led_states, &(led_states_rgb[1]));
-      if(compare_ok)
-        if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_1, &(led_states_rgb[1]), sizeof(led_states_rgb_t)) == ESP_OK) 
-          nvs_commit(nvs_partition);
+    if(err == ESP_ERR_NVS_NOT_FOUND || compare_storage_rgb(&led_states, &(led_states_rgb[1]))){
+      if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_1, &(led_states_rgb[1]), sizeof(led_states_rgb_t)) == ESP_OK) nvs_commit(nvs_partition);
     }
 
       // RGB 2
     err = nvs_get_blob(nvs_partition, NVS_KEY_RGB_2, &led_states, &nvs_size);
-    if(err == ESP_OK){
-      compare_ok = compare_storage_rgb(&led_states, &(led_states_rgb[2]));
-      if(compare_ok)
-        if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_2, &(led_states_rgb[2]), sizeof(led_states_rgb_t)) == ESP_OK) 
-          nvs_commit(nvs_partition);
+    if(err == ESP_ERR_NVS_NOT_FOUND || compare_storage_rgb(&led_states, &(led_states_rgb[2]))){
+      if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_2, &(led_states_rgb[2]), sizeof(led_states_rgb_t)) == ESP_OK) nvs_commit(nvs_partition);
     }
 
       // RGB 3
     err = nvs_get_blob(nvs_partition, NVS_KEY_RGB_3, &led_states, &nvs_size);
-    if(err == ESP_OK){
-      compare_ok = compare_storage_rgb(&led_states, &(led_states_rgb[3]));
-      if(compare_ok)
-        if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_3, &(led_states_rgb[3]), sizeof(led_states_rgb_t)) == ESP_OK) 
-          nvs_commit(nvs_partition);
+    if(err == ESP_ERR_NVS_NOT_FOUND || compare_storage_rgb(&led_states, &(led_states_rgb[3]))){
+      if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_3, &(led_states_rgb[3]), sizeof(led_states_rgb_t)) == ESP_OK) nvs_commit(nvs_partition);
     }
   }
   nvs_close(nvs_partition);
@@ -641,17 +629,17 @@ void lighting_control_task(void *params){
     }
 
     if(status_led && led_states.fx){
-        time += xDelay_Lighting_Control_Task;
-          
-        R = (led_states.r.amp/2) + (led_states.r.amp/2) * sin((led_states.r.per * time / 10000) + led_states.r.des / 1000);
-        G = (led_states.g.amp/2) + (led_states.g.amp/2) * sin((led_states.g.per * time / 10000) + led_states.g.des / 1000);
-        B = (led_states.b.amp/2) + (led_states.b.amp/2) * sin((led_states.b.per * time / 10000) + led_states.b.des / 1000);
+      time += xDelay_Lighting_Control_Task;
         
-        pwm_set_duty(0, R);
-        pwm_set_duty(1, G);
-        pwm_set_duty(2, B);
-        pwm_start();
-      }
+      R = (led_states.r.amp/2) + (led_states.r.amp/2) * sin((led_states.r.per * time / 10000) + led_states.r.des / 1000);
+      G = (led_states.g.amp/2) + (led_states.g.amp/2) * sin((led_states.g.per * time / 10000) + led_states.g.des / 1000);
+      B = (led_states.b.amp/2) + (led_states.b.amp/2) * sin((led_states.b.per * time / 10000) + led_states.b.des / 1000);
+      
+      pwm_set_duty(0, R);
+      pwm_set_duty(1, G);
+      pwm_set_duty(2, B);
+      pwm_start();
+    }
 
     vTaskDelay(xDelay_Lighting_Control_Task);
   }
@@ -697,7 +685,7 @@ actions_enum select_wifi_action(data_json_t *data_json){
     case id_json_t::CONNECTION_STATUS_REQUEST: return actions_enum::WIFI_CONNECTION_STATUS_OK;
     case id_json_t::REQUEST_ALL_STATES: return actions_enum::WIFI_REQUEST_ALL_STATES;
     case id_json_t::DATA_TRANSACTION:
-      switch(data_json->mask){
+      switch(data_json->mask & ~(mask_json_t::ID)){
         case mask_json_t::L1: return actions_enum::WIFI_L1;
         case mask_json_t::L2: return actions_enum::WIFI_L2;
         case mask_json_t::LED: return actions_enum::WIFI_LED;
@@ -806,7 +794,7 @@ void update_states(actions_enum action, data_json_t *data_json){
     //LED - MODE (WIFI)
   } else if(action == actions_enum::WIFI_MODO){
     if(xSemaphoreTake(semaphore_lighting_states, xTicksToWait_semaphore_lighting_states) == pdPASS){
-      if(data_json->ls.mode < 4)
+      if(data_json->ls.mode < 4 && data_json->ls.mode >= 0)
         lighting_states.mode = data_json->ls.mode;
     }
     xSemaphoreGive(semaphore_lighting_states);
@@ -979,12 +967,17 @@ void update_storage_nvs(actions_enum action){
     else
       xTimerReset(xHandleTimer_nvs_storage_lighting_states, 0);
 
-    ESP_LOGV(TAG_LD_CONTROL, "Contador iniciado para salvamento de estados");
+    ESP_LOGV(TAG_LD_CONTROL, "Contador iniciado para salvamento de estados LS");
   }
 
     // Atualiza estador do RGB
   if(rgb){
-    ESP_LOGV(TAG_LD_CONTROL, "Contador iniciado para salvamento de estados");
+    if(xTimerIsTimerActive(xHandleTimer_nvs_storage_led_states_rgb) == pdFALSE) 
+      xTimerStart(xHandleTimer_nvs_storage_led_states_rgb, 0);
+    else
+      xTimerReset(xHandleTimer_nvs_storage_led_states_rgb, 0);
+
+    ESP_LOGV(TAG_LD_CONTROL, "Contador iniciado para salvamento de estados RGB");
   }
 }
 
