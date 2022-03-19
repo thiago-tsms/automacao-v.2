@@ -16,7 +16,7 @@
   /* Task Delay */
 #define xDelay_Wifi_STA_Socket_Server_Control_Task pdMS_TO_TICKS(250)
 #define xDelay_Wifi_STA_Socket_Server_Send_msg_Task pdMS_TO_TICKS(200)
-#define xDelay_Wifi_STA_Socket_Server_Recv_msg_Task pdMS_TO_TICKS(100)
+#define xDelay_Wifi_STA_Socket_Server_Recv_msg_Task pdMS_TO_TICKS(180)
 
 
   /* Task Stack */
@@ -26,7 +26,7 @@
 
 
   /* Parametros Software Timer */
-#define xTimer_wifi_sta_socket_server_time_limit pdMS_TO_TICKS(4000)
+#define xTimer_wifi_sta_socket_server_time_limit pdMS_TO_TICKS(2000)
 TimerHandle_t xHandleTimer_wifi_sta_socket_server_time_limit;
 
 
@@ -296,9 +296,9 @@ void wifi_sta_socket_server_recv_msg_task(void *params){
   //UBaseType_t uxHighWaterMark;
 
   data_json_t json_data;
-  char json_string[400];
+  char json_string[512];
   size_t json_string_len = sizeof(json_string);
-  int len, i;
+  int len;
 
   while(1){
     len = recv(sock, json_string, json_string_len, 0);
@@ -313,16 +313,6 @@ void wifi_sta_socket_server_recv_msg_task(void *params){
 
       // Data received
     } else {
-      json_string[len] = 0;
-
-      for(i = 0; i < len; i++){
-        if(json_string[i] == '}') break;
-      }
-      json_string[i+1] = 0;
-
-      /*printf("%s \n", json_string);
-      printf("%d \n", len);*/
-
       json_data = json_deserialize(json_string);
       xQueueSend(queue_wifi_recv, &json_data, 0);
 
