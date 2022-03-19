@@ -16,7 +16,13 @@
   /* Task Delay */
 #define xDelay_Wifi_STA_Socket_Server_Control_Task pdMS_TO_TICKS(250)
 #define xDelay_Wifi_STA_Socket_Server_Send_msg_Task pdMS_TO_TICKS(200)
-#define xDelay_Wifi_STA_Socket_Server_Recv_msg_Task pdMS_TO_TICKS(150)
+#define xDelay_Wifi_STA_Socket_Server_Recv_msg_Task pdMS_TO_TICKS(100)
+
+
+  /* Task Stack */
+#define usStackDepth_Wifi_STA_Socket_Server_Control_Task 1250
+#define usStackDepth_Wifi_STA_Socket_Server_Send_msg_Task 1250
+#define usStackDepth_Wifi_STA_Socket_Server_Recv_msg_Task 2250
 
 
   /* Parametros Software Timer */
@@ -143,7 +149,7 @@ void wifi_sta_socket_server_event_handler_on_wifi(void* arg, esp_event_base_t ev
     break;
 
     case WIFI_EVENT_STA_START:
-      xTaskCreate(wifi_sta_socket_server_control_task, "wifi-sta-socket-server-control-task", 2048, NULL, 2, &xHandleTask_wifi_sta_socket_server_control);
+      xTaskCreate(wifi_sta_socket_server_control_task, "wifi-sta-socket-server-control-task", usStackDepth_Wifi_STA_Socket_Server_Control_Task, NULL, 2, &xHandleTask_wifi_sta_socket_server_control);
       ESP_LOGI(TAG_WIFI_STA_SOCKET_SERVER, "STA Start");
     break;
 
@@ -163,7 +169,7 @@ void wifi_sta_socket_server_event_handler_on_wifi(void* arg, esp_event_base_t ev
 
     case WIFI_EVENT_STA_DISCONNECTED:
       ESP_LOGI(TAG_WIFI_STA_SOCKET_SERVER, "Wifi Desconectado");
-      vTaskDelay(pdMS_TO_TICKS(10000));
+      vTaskDelay(pdMS_TO_TICKS(8000));
       esp_wifi_connect();
     break;
   }
@@ -171,6 +177,8 @@ void wifi_sta_socket_server_event_handler_on_wifi(void* arg, esp_event_base_t ev
 
   // Task de controle do socket [Estabelece a conexão via socket e inicia as taks de envio e recepção de mensagens]
 void wifi_sta_socket_server_control_task(void *params){
+  //UBaseType_t uxHighWaterMark;
+
   struct sockaddr_in addr_socket;
   struct sockaddr_in source_addr;
   int listen_sock, err;
@@ -218,8 +226,8 @@ void wifi_sta_socket_server_control_task(void *params){
       ESP_LOGI(TAG_WIFI_STA_SOCKET_SERVER, "Socket aceito");
 
         // Inicia task de troca de dados e o contador de close conection
-      xTaskCreate(wifi_sta_socket_server_send_msg_task, "wifi-sta-socket-server-send-msg-task", 1500, &sock, 2, &xHandleTask_wifi_sta_socket_server_send_msg);
-      xTaskCreate(wifi_sta_socket_server_recv_msg_task, "wifi-sta-socket-server-recv-msg-task", 2048, &sock, 2, &xHandleTask_wifi_sta_socket_server_recv_msg);
+      xTaskCreate(wifi_sta_socket_server_send_msg_task, "wifi-sta-socket-server-send-msg-task", usStackDepth_Wifi_STA_Socket_Server_Send_msg_Task, &sock, 2, &xHandleTask_wifi_sta_socket_server_send_msg);
+      xTaskCreate(wifi_sta_socket_server_recv_msg_task, "wifi-sta-socket-server-recv-msg-task", usStackDepth_Wifi_STA_Socket_Server_Recv_msg_Task, &sock, 2, &xHandleTask_wifi_sta_socket_server_recv_msg);
       xHandleTimer_wifi_sta_socket_server_time_limit = xTimerCreate("wifi-sta-socket-server-time-limit", xTimer_wifi_sta_socket_server_time_limit, pdFALSE, NULL, wifi_sta_socket_server_time_limit);
       while(xHandleTask_wifi_sta_socket_server_recv_msg == NULL || xHandleTask_wifi_sta_socket_server_recv_msg == NULL) vTaskDelay(pdMS_TO_TICKS(50));
       xTaskNotify(xHandleTask_central_control, NOTIFY_WIFI_CONECT, eSetBits);
@@ -239,6 +247,9 @@ void wifi_sta_socket_server_control_task(void *params){
         close(sock);
       }
 
+      /*uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+      printf("STACK wifi-sta-socket-server-control-task -- alocado: %d || livre %d \n", usStackDepth_Wifi_STA_Socket_Server_Control_Task, uxHighWaterMark);*/
+
       vTaskDelay(xDelay_Wifi_STA_Socket_Server_Control_Task);
     }
 
@@ -252,6 +263,8 @@ void wifi_sta_socket_server_control_task(void *params){
 
   // Task de recebimento de mensagens
 void wifi_sta_socket_server_send_msg_task(void *params){
+  //UBaseType_t uxHighWaterMark;
+
   data_json_t json_data;
   char *json_string;
   int err;
@@ -271,16 +284,21 @@ void wifi_sta_socket_server_send_msg_task(void *params){
       json_string_free(json_string);
     }
 
+    /*uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+    printf("STACK wifi-sta-socket-server-send-msg-task -- alocado: %d || livre %d \n", usStackDepth_Wifi_STA_Socket_Server_Send_msg_Task, uxHighWaterMark);*/
+
     vTaskDelay(xDelay_Wifi_STA_Socket_Server_Send_msg_Task);
   }
 }
 
   // Task de envio de mensagens
 void wifi_sta_socket_server_recv_msg_task(void *params){
+  //UBaseType_t uxHighWaterMark;
+
   data_json_t json_data;
-  char json_string[512];
+  char json_string[400];
   size_t json_string_len = sizeof(json_string);
-  int len;
+  int len, i;
 
   while(1){
     len = recv(sock, json_string, json_string_len, 0);
@@ -295,12 +313,25 @@ void wifi_sta_socket_server_recv_msg_task(void *params){
 
       // Data received
     } else {
+      json_string[len] = 0;
+
+      for(i = 0; i < len; i++){
+        if(json_string[i] == '}') break;
+      }
+      json_string[i+1] = 0;
+
+      /*printf("%s \n", json_string);
+      printf("%d \n", len);*/
+
       json_data = json_deserialize(json_string);
       xQueueSend(queue_wifi_recv, &json_data, 0);
 
       if(xTimerIsTimerActive(xHandleTimer_wifi_sta_socket_server_time_limit) == pdFALSE) xTimerStart(xHandleTimer_wifi_sta_socket_server_time_limit, 0);
       else xTimerReset(xHandleTimer_wifi_sta_socket_server_time_limit, 0);
     }
+
+    /*uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+    printf("STACK wifi-sta-socket-server-recv-msg-task -- alocado: %d || livre %d \n", usStackDepth_Wifi_STA_Socket_Server_Recv_msg_Task, uxHighWaterMark);*/
 
     vTaskDelay(xDelay_Wifi_STA_Socket_Server_Recv_msg_Task);
   }

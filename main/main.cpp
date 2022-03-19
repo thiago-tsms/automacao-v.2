@@ -34,6 +34,11 @@
 #define xDelay_Config_Wifi_Connection pdMS_TO_TICKS(100)
 
 
+  /* Task Stack */
+#define usStackDepth_central_control_task 2100
+#define usStackDepth_lighting_control_task 1250
+
+
   /* TAG de Log */
 const char *TAG_MAIN = "log-main";
 const char *TAG_NVS = "log-nvs";
@@ -74,7 +79,7 @@ TimerHandle_t xHandleTimer_nvs_storage_led_states_rgb;
   /* Parametros Queue e Set */
 #define QUEUE_LENGHT_INTERRUPT_TIMER 6
 #define QUEUE_LENGHT_WIFI_SEND 6
-#define QUEUE_LENGHT_WIFI_RECV 8
+#define QUEUE_LENGHT_WIFI_RECV 10
 #define QUEUE_SIZE_INTERRUPT_TIMER sizeof(action_interrupt_timer_t)
 #define QUEUE_SIZE_WIFI_SEND sizeof(data_json_t)
 #define QUEUE_SIZE_WIFI_RECV sizeof(data_json_t)
@@ -126,6 +131,7 @@ uint32_t wifi_gateway;
 uint32_t wifi_netmask;
 uint16_t wifi_port;
 bool wifi_status = false;
+
 
   /* Parâmetros Configuração de conexão */
 #define TIME_TO_SEQUENCE pdMS_TO_TICKS(4000)
@@ -213,8 +219,8 @@ void app_main(){
 
     // Inicia tarefas (task)
   ESP_LOGI(TAG_MAIN, "Iniciando Tasks");
-  xTaskCreate(central_control_task, "central-control-task", 5000, NULL, 2, &xHandleTask_central_control);
-  xTaskCreate(lighting_control_task, "lighting-control-task", 2000, NULL, 1, &xHandleTask_lighting_control);
+  xTaskCreate(central_control_task, "central-control-task", usStackDepth_central_control_task, NULL, 3, &xHandleTask_central_control);
+  xTaskCreate(lighting_control_task, "lighting-control-task", usStackDepth_lighting_control_task, NULL, 1, &xHandleTask_lighting_control);
 
 
       // Inicialização API Software Timer
@@ -284,7 +290,7 @@ void nvs_load_data(){
     if(nvs_get_u8(nvs_partition, NVS_KEY_L1, &nvs_uint8_data) == ESP_OK) lighting_states.l1 = nvs_uint8_data;
     if(nvs_get_u8(nvs_partition, NVS_KEY_L2, &nvs_uint8_data) == ESP_OK) lighting_states.l2 = nvs_uint8_data;
     if(nvs_get_u8(nvs_partition, NVS_KEY_LED, &nvs_uint8_data) == ESP_OK) lighting_states.led = nvs_uint8_data;
-    nvs_get_u8(nvs_partition, NVS_KEY_LED_MODO, &(lighting_states.mode));
+    if(nvs_get_u8(nvs_partition, NVS_KEY_LED_MODO, &nvs_uint8_data) == ESP_OK) lighting_states.mode = nvs_uint8_data;
 
     // Inicializa partição Iluminação
   } else if(err == ESP_ERR_NVS_NOT_INITIALIZED){
@@ -493,7 +499,7 @@ void nvs_storage_lighting_states(TimerHandle_t xTimer){
   // Salva parâmetros dos efeitos do RGB na memória (NVS)
 void nvs_storage_led_states_rgb(TimerHandle_t xTimer){
   nvs_handle nvs_partition;
-  size_t nvs_size;
+  size_t nvs_size = sizeof(led_states_rgb_t);
   esp_err_t err;
   led_states_rgb_t led_states;
 
@@ -505,25 +511,25 @@ void nvs_storage_led_states_rgb(TimerHandle_t xTimer){
       // RGB 0
     err = nvs_get_blob(nvs_partition, NVS_KEY_RGB_0, &led_states, &nvs_size);
     if(err == ESP_ERR_NVS_NOT_FOUND || compare_storage_rgb(&led_states, &(led_states_rgb[0]))){
-      if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_0, &(led_states_rgb[0]), sizeof(led_states_rgb_t)) == ESP_OK) nvs_commit(nvs_partition);
+      if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_0, &(led_states_rgb[0]), nvs_size) == ESP_OK) nvs_commit(nvs_partition);
     }
 
       // RGB 1
     err = nvs_get_blob(nvs_partition, NVS_KEY_RGB_1, &led_states, &nvs_size);
     if(err == ESP_ERR_NVS_NOT_FOUND || compare_storage_rgb(&led_states, &(led_states_rgb[1]))){
-      if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_1, &(led_states_rgb[1]), sizeof(led_states_rgb_t)) == ESP_OK) nvs_commit(nvs_partition);
+      if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_1, &(led_states_rgb[1]), nvs_size) == ESP_OK) nvs_commit(nvs_partition);
     }
 
       // RGB 2
     err = nvs_get_blob(nvs_partition, NVS_KEY_RGB_2, &led_states, &nvs_size);
     if(err == ESP_ERR_NVS_NOT_FOUND || compare_storage_rgb(&led_states, &(led_states_rgb[2]))){
-      if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_2, &(led_states_rgb[2]), sizeof(led_states_rgb_t)) == ESP_OK) nvs_commit(nvs_partition);
+      if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_2, &(led_states_rgb[2]), nvs_size) == ESP_OK) nvs_commit(nvs_partition);
     }
 
       // RGB 3
     err = nvs_get_blob(nvs_partition, NVS_KEY_RGB_3, &led_states, &nvs_size);
     if(err == ESP_ERR_NVS_NOT_FOUND || compare_storage_rgb(&led_states, &(led_states_rgb[3]))){
-      if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_3, &(led_states_rgb[3]), sizeof(led_states_rgb_t)) == ESP_OK) nvs_commit(nvs_partition);
+      if(nvs_set_blob(nvs_partition, NVS_KEY_RGB_3, &(led_states_rgb[3]), nvs_size) == ESP_OK) nvs_commit(nvs_partition);
     }
   }
   nvs_close(nvs_partition);
@@ -535,6 +541,7 @@ void nvs_storage_led_states_rgb(TimerHandle_t xTimer){
   // Task de controle geral
 void central_control_task(void *params){
   vTaskDelay(xDelay_Task_Start);
+  //UBaseType_t uxHighWaterMark;
 
   QueueSetMemberHandle_t set_recv;
 
@@ -579,6 +586,9 @@ void central_control_task(void *params){
       }
     }
 
+    /*uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+    printf("STACK central-control-task -- alocado: %d || livre %d \n", usStackDepth_central_control_task, uxHighWaterMark);*/
+
     vTaskDelayUntil(&reference_time_delay, xDelay_Central_Control_Task);
   }
 }
@@ -586,6 +596,7 @@ void central_control_task(void *params){
   // Controla os periféricos
 void lighting_control_task(void *params){
   vTaskDelay(xDelay_Task_Start);
+  //UBaseType_t uxHighWaterMark;
   
   float time = 0;
   uint32_t notify_data;
@@ -640,6 +651,9 @@ void lighting_control_task(void *params){
       pwm_set_duty(2, B);
       pwm_start();
     }
+
+    /*uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+    printf("STACK lighting-control-task -- alocado: %d || livre %d \n", usStackDepth_lighting_control_task, uxHighWaterMark);*/
 
     vTaskDelay(xDelay_Lighting_Control_Task);
   }
@@ -794,7 +808,7 @@ void update_states(actions_enum action, data_json_t *data_json){
     //LED - MODE (WIFI)
   } else if(action == actions_enum::WIFI_MODO){
     if(xSemaphoreTake(semaphore_lighting_states, xTicksToWait_semaphore_lighting_states) == pdPASS){
-      if(data_json->ls.mode < 4 && data_json->ls.mode >= 0)
+      if(data_json->ls.mode < 4 /*&& data_json->ls.mode >= 0*/)
         lighting_states.mode = data_json->ls.mode;
     }
     xSemaphoreGive(semaphore_lighting_states);
